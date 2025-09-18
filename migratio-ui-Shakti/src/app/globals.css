@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@import './typography.css';
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Remove underlines from Migratio links globally */
+a.migratio-link,
+a[href="/"] {
+  text-decoration: none !important;
+}
+
+a.migratio-link:hover,
+a[href="/"]:hover {
+  text-decoration: none !important;
+}
+
+/* Ensure migratio-link is clickable */
+.migratio-link {
+  cursor: pointer !important;
+  display: block !important;
+  width: 100% !important;
+  user-select: none;
+}
+
+.migratio-link:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.migratio-link * {
+  pointer-events: none;
+}
+
+/* Additional specificity for sidebar and header links */
+header a[href="/"],
+.sidebar a[href="/"],
+nav a[href="/"] {
+  text-decoration: none !important;
+}
+
+header a[href="/"]:hover,
+.sidebar a[href="/"]:hover,
+nav a[href="/"]:hover {
+  text-decoration: none !important;
+}
