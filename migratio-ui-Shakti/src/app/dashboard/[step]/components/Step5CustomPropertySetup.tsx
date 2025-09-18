@@ -11,6 +11,11 @@ import { toast } from "sonner";
 
 interface Step5Props {
   onBack: (step: StepIndex) => void;
+  /** optional next handler; if not provided we'll dispatch window "step-next" */
+  onNext?: (step: StepIndex) => void;
+  /** optional explicit next step index; defaults to 6 if not provided */
+  nextStep?: StepIndex;
+
   selectedObjects: Set<ObjectKey>;
   hubspotStatusA: { portalId: number | null };
   hubspotStatusB: { portalId: number | null };
@@ -18,6 +23,8 @@ interface Step5Props {
 
 export default function Step5CustomPropertySetup({
   onBack,
+  onNext,
+  nextStep,
   selectedObjects,
   hubspotStatusA,
   hubspotStatusB,
@@ -42,20 +49,15 @@ export default function Step5CustomPropertySetup({
   useEffect(() => {
     const loadMigrationStatus = () => {
       try {
-        const savedCreated = localStorage.getItem('hubspotB_createdProperties');
-        const savedExisting = localStorage.getItem('hubspotB_existingProperties');
+        const savedCreated = localStorage.getItem("hubspotB_createdProperties");
+        const savedExisting = localStorage.getItem("hubspotB_existingProperties");
 
-        if (savedCreated) {
-          setCreatedProperties(new Set(JSON.parse(savedCreated)));
-        }
-        if (savedExisting) {
-          setExistingProperties(new Set(JSON.parse(savedExisting)));
-        }
+        if (savedCreated) setCreatedProperties(new Set(JSON.parse(savedCreated)));
+        if (savedExisting) setExistingProperties(new Set(JSON.parse(savedExisting)));
       } catch (error) {
         console.error("Error loading migration status:", error);
       }
     };
-
     loadMigrationStatus();
   }, []);
 
@@ -70,7 +72,6 @@ export default function Step5CustomPropertySetup({
         }
       }
     };
-
     refreshTokenOnLoad();
   }, [profile?.hubspot_refresh_token_b, profile?.hubspot_access_token_b]);
 
@@ -114,9 +115,7 @@ export default function Step5CustomPropertySetup({
 
       const response = await fetch("/api/hubspot/refresh-token", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           refreshToken: profile.hubspot_refresh_token_b,
           userId: user?.id,
@@ -127,7 +126,9 @@ export default function Step5CustomPropertySetup({
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(
-          `Token refresh failed: ${response.statusText} - ${errorData.message || errorData.error || "Unknown error"}`
+          `Token refresh failed: ${response.statusText} - ${
+            errorData.message || errorData.error || "Unknown error"
+          }`,
         );
       }
 
@@ -135,7 +136,6 @@ export default function Step5CustomPropertySetup({
       if (!result.success || !result.access_token) {
         throw new Error("Token refresh response invalid");
       }
-
       return result.access_token;
     } catch (error) {
       console.error("Token refresh failed:", error);
@@ -146,18 +146,14 @@ export default function Step5CustomPropertySetup({
   // Function to check if property already exists in HubSpot B
   const checkPropertyExists = async (objectType: string, propertyName: string, accessToken: string) => {
     try {
-      const response = await fetch(
-        `/api/hubspot/schema/${objectType}/${propertyName}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "X-User-ID": user?.id || "",
-            "X-Portal-ID": hubspotStatusB.portalId?.toString() || "",
-          },
-        }
-      );
-
+      const response = await fetch(`/api/hubspot/schema/${objectType}/${propertyName}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-User-ID": user?.id || "",
+          "X-Portal-ID": hubspotStatusB.portalId?.toString() || "",
+        },
+      });
       return response.ok;
     } catch (error) {
       console.error("Error checking property existence:", error);
@@ -173,7 +169,6 @@ export default function Step5CustomPropertySetup({
       });
       return;
     }
-
     if (!profile?.hubspot_refresh_token_b) {
       toast.error("HubSpot B refresh token not available", {
         description: "Please reconnect your HubSpot B account.",
@@ -181,19 +176,12 @@ export default function Step5CustomPropertySetup({
       return;
     }
 
-    // Filter to only include user-defined properties
+    // Filter only user-defined properties (skip reserved/app prefixes)
     const allPropertiesToMigrate = detailedProperties.filter((prop) => {
-      if (prop.category !== "Userdefined") {
-        return false;
-      }
-
+      if (prop.category !== "Userdefined") return false;
       const name = prop.name.toLowerCase();
-      const reservedPrefixes = ["hs_", "hubspot_"];
-      const hasReservedPrefix = reservedPrefixes.some((prefix) =>
-        name.startsWith(prefix)
-      );
+      const hasReservedPrefix = ["hs_", "hubspot_"].some((p) => name.startsWith(p));
       const hasAppPrefix = name.startsWith("a") && name.includes("_") && name.match(/^a\d+_/);
-
       return !(hasReservedPrefix || hasAppPrefix);
     });
 
@@ -207,21 +195,16 @@ export default function Step5CustomPropertySetup({
     try {
       setIsMigrating(true);
 
-      // DON'T reset the tracking sets here - this was causing the toggle issue
-      // We want to preserve existing state and only add new properties
-
       let accessToken = profile?.hubspot_access_token_b;
       try {
         accessToken = await refreshHubSpotBToken();
       } catch (tokenError) {
         if (!accessToken) {
-          throw new Error(
-            "No valid access token available. Please reconnect your HubSpot B account."
-          );
+          throw new Error("No valid access token available. Please reconnect your HubSpot B account.");
         }
       }
 
-      // Create copies of the current sets to update
+      // copies so we can mutate then set
       const newCreatedProperties = new Set(createdProperties);
       const newExistingProperties = new Set(existingProperties);
 
@@ -234,7 +217,7 @@ export default function Step5CustomPropertySetup({
         try {
           const propertyKey = `${property.object}-${property.name}`;
 
-          // Skip if already processed in previous migrations
+          // Skip if processed earlier
           if (newCreatedProperties.has(propertyKey) || newExistingProperties.has(propertyKey)) {
             alreadyExistsCount++;
             continue;
@@ -243,7 +226,7 @@ export default function Step5CustomPropertySetup({
           const sanitizedName = property.name.toLowerCase().replace(/[^a-z0-9_]/g, "_");
           const finalName = /^[0-9]/.test(sanitizedName) ? `prop_${sanitizedName}` : sanitizedName;
 
-          const propertyExists = await checkPropertyExists(property.object, finalName, accessToken);
+          const propertyExists = await checkPropertyExists(property.object, finalName, accessToken!);
           if (propertyExists) {
             alreadyExistsCount++;
             alreadyExistsProperties.push(`${property.name} (${property.object})`);
@@ -251,14 +234,15 @@ export default function Step5CustomPropertySetup({
             continue;
           }
 
-          await createPropertyInHubSpotB(property.object, property, accessToken);
+          await createPropertyInHubSpotB(property.object, property, accessToken!);
           successCount++;
           newCreatedProperties.add(propertyKey);
         } catch (error) {
           console.error(`Failed to create property ${property.name}:`, error);
           const errorMessage = error instanceof Error ? error.message : String(error);
-          const isPropertyExists = /already exists|duplicate|name already taken|conflict|already been created|Property with this name already exists/i.test(errorMessage);
-
+          const isPropertyExists = /already exists|duplicate|name already taken|conflict|already been created|Property with this name already exists/i.test(
+            errorMessage,
+          );
           if (isPropertyExists) {
             alreadyExistsCount++;
             alreadyExistsProperties.push(`${property.name} (${property.object})`);
@@ -268,18 +252,16 @@ export default function Step5CustomPropertySetup({
           }
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        // small throttle
+        await new Promise((resolve) => setTimeout(resolve, 400));
       }
 
-      // Update state with the new sets
+      // persist & re-render
       setCreatedProperties(newCreatedProperties);
       setExistingProperties(newExistingProperties);
+      localStorage.setItem("hubspotB_createdProperties", JSON.stringify([...newCreatedProperties]));
+      localStorage.setItem("hubspotB_existingProperties", JSON.stringify([...newExistingProperties]));
 
-      // Save to localStorage for persistence
-      localStorage.setItem('hubspotB_createdProperties', JSON.stringify([...newCreatedProperties]));
-      localStorage.setItem('hubspotB_existingProperties', JSON.stringify([...newExistingProperties]));
-
-      // Set migration summary
       setMigrationSummary({
         successCount,
         errorCount,
@@ -287,7 +269,6 @@ export default function Step5CustomPropertySetup({
         alreadyExistsProperties,
       });
 
-      // Show appropriate toast messages
       if (successCount > 0 || alreadyExistsCount > 0) {
         if (successCount === 0 && alreadyExistsCount > 0 && errorCount === 0) {
           toast.success("Properties already exist", {
@@ -300,13 +281,13 @@ export default function Step5CustomPropertySetup({
             duration: 6000,
           });
         }
-      } else if (errorCount > 0) {
+        // No extra state needed—render logic below will switch to Next automatically
+      } else {
         throw new Error("No properties were created successfully");
       }
     } catch (error) {
       console.error("Error migrating properties:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
       if (errorMessage.includes("No properties were created successfully")) {
         toast.warning("Migration completed with issues", {
           description: "No new properties were created. They may already exist or there were auth/network issues.",
@@ -321,13 +302,8 @@ export default function Step5CustomPropertySetup({
     }
   };
 
-
   // Function to create individual property in HubSpot B
-  const createPropertyInHubSpotB = async (
-    objectType: string,
-    property: any,
-    accessToken?: string
-  ) => {
+  const createPropertyInHubSpotB = async (objectType: string, property: any, accessToken?: string) => {
     if (!property.name) {
       throw new Error(`Invalid property data: missing name for property ${JSON.stringify(property)}`);
     }
@@ -336,11 +312,32 @@ export default function Step5CustomPropertySetup({
     const finalName = /^[0-9]/.test(sanitizedName) ? `prop_${sanitizedName}` : sanitizedName;
 
     const reservedNames = [
-      "id", "createdate", "lastmodifieddate", "hs_object_id", "hs_createdate",
-      "hs_lastmodifieddate", "email", "firstname", "lastname", "phone", "company",
-      "website", "city", "state", "country", "dealname", "amount", "closedate",
-      "pipeline", "dealstage", "dealtype", "subject", "content", "hs_ticket_id",
-      "hs_ticket_category", "hs_ticket_priority",
+      "id",
+      "createdate",
+      "lastmodifieddate",
+      "hs_object_id",
+      "hs_createdate",
+      "hs_lastmodifieddate",
+      "email",
+      "firstname",
+      "lastname",
+      "phone",
+      "company",
+      "website",
+      "city",
+      "state",
+      "country",
+      "dealname",
+      "amount",
+      "closedate",
+      "pipeline",
+      "dealstage",
+      "dealtype",
+      "subject",
+      "content",
+      "hs_ticket_id",
+      "hs_ticket_category",
+      "hs_ticket_priority",
     ];
 
     const finalPropertyName = reservedNames.includes(finalName.toLowerCase())
@@ -469,14 +466,19 @@ export default function Step5CustomPropertySetup({
     };
   }, [selectedObjects, mappingsData, isLoading]);
 
+  // helper to go next
+  const handleNext = () => {
+    const step: StepIndex = (nextStep ?? (6 as StepIndex)) as StepIndex;
+    if (onNext) onNext(step);
+    else window.dispatchEvent(new CustomEvent("step-next", { detail: { step } }));
+  };
+
   return (
     <>
       <Heading as="h2" className="mt-8">
         Custom Property Setup
       </Heading>
-      <p className="text-[var(--migratio_text)] mt-2">
-        Default properties don't need to be set up.
-      </p>
+      <p className="text-[var(--migratio_text)] mt-2">Default properties don't need to be set up.</p>
 
       <div className="mt-6 flex gap-3">
         <Button variant="with_arrow" onClick={() => onBack(4 as StepIndex)}>
@@ -484,24 +486,21 @@ export default function Step5CustomPropertySetup({
         </Button>
       </div>
 
-      {/* Summary: Selected Objects and Custom Properties */}
+      {/* Summary */}
       <div className="mt-8 p-4 bg-gray-50 rounded-lg border">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Summary</h3>
+
         {/* Account Details */}
         <div className="mb-4">
           <div className="text-xs text-gray-500 mb-1">Account Details</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700">
             <div className="bg-white rounded border p-2 flex items-center justify-between">
               <span>HubSpot CRM A Portal ID</span>
-              <span className="font-medium">
-                {hubspotStatusA.portalId ?? "—"}
-              </span>
+              <span className="font-medium">{hubspotStatusA.portalId ?? "—"}</span>
             </div>
             <div className="bg-white rounded border p-2 flex items-center justify-between">
               <span>HubSpot CRM B Portal ID</span>
-              <span className="font-medium">
-                {hubspotStatusB.portalId ?? "—"}
-              </span>
+              <span className="font-medium">{hubspotStatusB.portalId ?? "—"}</span>
             </div>
           </div>
         </div>
@@ -509,9 +508,7 @@ export default function Step5CustomPropertySetup({
         <div className="space-y-2 text-sm text-gray-700">
           <div>
             <span className="font-medium">Selected Objects:</span>
-            <span className="ml-2 capitalize">
-              {selected.length > 0 ? selected.join(", ") : "None"}
-            </span>
+            <span className="ml-2 capitalize">{selected.length > 0 ? selected.join(", ") : "None"}</span>
           </div>
           <div>
             <span className="font-medium">No. of Custom Properties:</span>
@@ -519,9 +516,7 @@ export default function Step5CustomPropertySetup({
           </div>
           <div>
             <span className="font-medium">No. of Userdefined Properties:</span>
-            <span className="ml-2 font-semibold text-purple-600">
-              {totalUserdefined}
-            </span>
+            <span className="ml-2 font-semibold text-purple-600">{totalUserdefined}</span>
           </div>
           <div>
             <span className="font-medium">Total Properties:</span>
@@ -532,11 +527,8 @@ export default function Step5CustomPropertySetup({
               <div className="text-xs text-gray-500 mb-1">Breakdown by object</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 {selected.map((obj) => {
-                  // Get the correct object name (ensure proper mapping)
-                  const objectName = obj.toLowerCase();
                   const customCount = counts[obj] || 0;
                   const userdefinedCount = userdefinedCounts[obj] || 0;
-
                   return (
                     <div key={obj} className="bg-white rounded border p-2 text-xs">
                       <div className="flex items-center justify-between mb-1">
@@ -563,50 +555,30 @@ export default function Step5CustomPropertySetup({
       {/* User-Defined Properties List */}
       {selected.length > 0 && (
         <div className="mt-8 p-4 bg-white rounded-lg border">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">
-            Detailed Properties List
-          </h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">Detailed Properties List</h3>
 
-          {/* Table Header */}
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b">
-                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">
-                    Object
-                  </th>
-                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">
-                    Property Name
-                  </th>
-                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">
-                    Type
-                  </th>
-                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">
-                    Category
-                  </th>
-                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">
-                    Created
-                  </th>
+                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">Object</th>
+                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">Property Name</th>
+                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">Type</th>
+                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">Category</th>
+                  <th className="text-left p-3 text-xs font-bold text-black uppercase tracking-wider">Created</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {isLoading ? (
                   <tr>
-                    <td
-                      colSpan={5}
-                      className="p-3 text-sm text-gray-500 text-center"
-                    >
+                    <td colSpan={5} className="p-3 text-sm text-gray-500 text-center">
                       Loading properties...
                     </td>
                   </tr>
                 ) : detailedProperties.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={5}
-                      className="p-3 text-sm text-gray-500 text-center"
-                    >
-                      No user-defined properties found. Please go back and
-                      create some user-defined property mappings.
+                    <td colSpan={5} className="p-3 text-sm text-gray-500 text-center">
+                      No user-defined properties found. Please go back and create some user-defined property mappings.
                     </td>
                   </tr>
                 ) : (
@@ -615,18 +587,14 @@ export default function Step5CustomPropertySetup({
                     const isCreated = createdProperties.has(propertyKey);
                     const alreadyExists = existingProperties.has(propertyKey);
 
-                    // Show checkmark for created or existing properties
-                    const showCheckmark = prop.category === "Custom" || isCreated || alreadyExists;
+                    // ✅ for built-in custom OR userdefined that is created/existing
+                    const showCheckmark =
+                      prop.category === "Custom" || isCreated || alreadyExists;
 
                     return (
-                      <tr
-                        key={`${prop.object}-${index}`}
-                        className="hover:bg-gray-50"
-                      >
+                      <tr key={`${prop.object}-${index}`} className="hover:bg-gray-50">
                         <td className="p-3 text-sm text-gray-700 capitalize">
-                          {index === 0 || detailedProperties[index - 1]?.object !== prop.object
-                            ? prop.object
-                            : ""}
+                          {index === 0 || detailedProperties[index - 1]?.object !== prop.object ? prop.object : ""}
                         </td>
 
                         <td className="p-3 text-sm text-gray-600">
@@ -634,7 +602,6 @@ export default function Step5CustomPropertySetup({
                             const label = prop.label || prop.name || "Unknown";
                             const internal = prop.name || "";
                             const showBracket = internal && label && internal.toLowerCase() !== label.toLowerCase();
-
                             return (
                               <>
                                 {label}
@@ -644,28 +611,25 @@ export default function Step5CustomPropertySetup({
                           })()}
                         </td>
 
-                        <td className="p-3 text-sm text-gray-600">
-                          {prop.type || "Unknown"}
-                        </td>
+                        <td className="p-3 text-sm text-gray-600">{prop.type || "Unknown"}</td>
+
                         <td className="p-3">
                           <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${prop.category === "Custom"
-                              ? "bg-blue-100 text-blue-800"
-                              : prop.category === "Userdefined"
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              prop.category === "Custom"
+                                ? "bg-blue-100 text-blue-800"
+                                : prop.category === "Userdefined"
                                 ? "bg-purple-100 text-purple-800"
                                 : "bg-green-100 text-green-800"
-                              }`}
+                            }`}
                           >
                             {prop.category}
                           </span>
                         </td>
+
                         <td className="p-3">
                           {showCheckmark ? (
-                            <svg
-                              className="w-5 h-5 text-green-500"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
+                            <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                               <path
                                 fillRule="evenodd"
                                 d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -673,11 +637,7 @@ export default function Step5CustomPropertySetup({
                               />
                             </svg>
                           ) : (
-                            <svg
-                              className="w-5 h-5 text-red-500"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
+                            <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
                               <path
                                 fillRule="evenodd"
                                 d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
@@ -709,66 +669,67 @@ export default function Step5CustomPropertySetup({
         </div>
       )}
 
-      {/* Custom Property Migration Info */}
-      <div className="mt-8 p-4 bg-green-50 rounded-lg border border-green-200">
-        <h3 className="text-sm font-semibold text-green-700 mb-3">
-          Create Custom Properties
-        </h3>
-        <div className="text-sm text-green-600 mb-3">
-          Click the button below to create only user-defined properties from the
-          detailed list in HubSpot CRM B account.
-        </div>
-        <div className="text-xs text-green-500">
-          <strong>Note:</strong> Only user-defined properties will be created in HubSpot CRM B. Custom properties
-          will be skipped.
-        </div>
-      </div>
-
-      {/* Action Button at the bottom */}
+      {/* Create / Next */}
       <div className="mt-8 flex flex-col items-center">
-        <button
-          onClick={handleMigratePropertiesToHubSpotB}
-          disabled={
-            !profile?.hubspot_access_token_b ||
-            !profile?.hubspot_refresh_token_b ||
-            !hubspotStatusB.portalId ||
-            isMigrating
-          }
-          className={`min-w-[300px] py-3 px-6 rounded-md font-medium text-white transition-colors
-            ${isMigrating || !profile?.hubspot_access_token_b || !hubspotStatusB.portalId
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-        >
-          {isMigrating ? (
-            <div className="flex items-center justify-center">
-              <svg
-                className="animate-spin h-5 w-5 text-white mr-2"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                ></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              Migrating Properties...
-            </div>
-          ) : (
-            "Create Custom Properties in HubSpot CRM B"
-          )}
-        </button>
+        {(() => {
+          // If there are no userdefined properties, or all are created/existing, show Next.
+          const userDefined = detailedProperties.filter((p: any) => p.category === "Userdefined");
+          const allDone =
+            userDefined.length === 0 ||
+            userDefined.every((p: any) => {
+              const key = `${p.object}-${p.name}`;
+              return createdProperties.has(key) || existingProperties.has(key);
+            });
 
+          if (allDone) {
+            return (
+              <button
+                onClick={handleNext}
+                className="min-w-[300px] py-3 px-6 rounded-md font-medium text-white bg-green-600 hover:bg-green-700 transition-colors"
+              >
+                Next
+              </button>
+            );
+          }
+
+          return (
+            <button
+              onClick={handleMigratePropertiesToHubSpotB}
+              disabled={
+                !profile?.hubspot_access_token_b ||
+                !profile?.hubspot_refresh_token_b ||
+                !hubspotStatusB.portalId ||
+                isMigrating
+              }
+              className={`min-w-[300px] py-3 px-6 rounded-md font-medium text-white transition-colors ${
+                isMigrating || !profile?.hubspot_access_token_b || !hubspotStatusB.portalId
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-blue-600 hover:bg-blue-700"
+              }`}
+            >
+              {isMigrating ? (
+                <div className="flex items-center justify-center">
+                  <svg
+                    className="animate-spin h-5 w-5 text-white mr-2"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  Migrating Properties...
+                </div>
+              ) : (
+                "Create Custom Properties in HubSpot CRM B"
+              )}
+            </button>
+          );
+        })()}
       </div>
     </>
   );

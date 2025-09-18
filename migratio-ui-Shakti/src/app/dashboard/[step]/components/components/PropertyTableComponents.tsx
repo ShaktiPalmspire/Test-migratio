@@ -108,6 +108,8 @@ const TargetPropertyDropdown: React.FC<{
   disabled?: boolean;
   propPool?: Record<ObjectKey, PropertyItem[]>;
   defaultMapModal?: Record<ObjectKey, PropertyItem[]>;
+  rowIndex?: number;
+  totalRows?: number;
 }> = ({
   value,
   onChange,
@@ -118,30 +120,35 @@ const TargetPropertyDropdown: React.FC<{
   userDefinedProperties = [],
   disabled = false,
   propPool,
-  defaultMapModal,
+  rowIndex,
+  totalRows,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [openUpwards, setOpenUpwards] = useState(false);
-
+  // const [openUpwards, setOpenUpwards] = useState(false);
+  const isLastSix =
+    totalRows && rowIndex !== undefined && rowIndex >= totalRows - 6;
   // Get default properties
-  const defaultProperties = getPropertiesForObject(objectType);
 
   // Combine defaults + user-defined (user-defined carry current source types)
-  // ✅ REPLACE THE EXISTING properties useMemo WITH THIS:
   const properties = useMemo(() => {
     const defaultProps = getPropertiesForObject(objectType);
     const customProps = (propPool?.[objectType] || []) as PropertyItem[];
-    const userDefined = (userDefinedProperties || []).map((name) => ({
-      name,
-      label: name,
-      type: sourcePropertyType || "string",
-      fieldType: sourceFieldType || "text",
-      required: false,
-    })) as PropertyItem[];
+
+    // FIX HERE 👇 keep real type/fieldType for custom
+    const userDefined = (userDefinedProperties || []).map((name) => {
+      const match = customProps.find((c) => c.name === name);
+      return {
+        name,
+        label: name,
+        type: match?.type || sourcePropertyType || "string",
+        fieldType: match?.fieldType || sourceFieldType || "text",
+        required: false,
+      };
+    }) as PropertyItem[];
 
     const merged = [...defaultProps, ...customProps, ...userDefined];
     return merged.filter(
@@ -162,8 +169,6 @@ const TargetPropertyDropdown: React.FC<{
 
       // ✅ STRICT TYPE FILTERING - Only show if both type AND fieldType match
       if (sourcePropertyType && sourceFieldType) {
-
-
         const typeMatches = p.type === sourcePropertyType;
         const fieldMatches = p.fieldType === sourceFieldType;
         return notRequired && typeMatches && fieldMatches;
@@ -208,27 +213,27 @@ const TargetPropertyDropdown: React.FC<{
   ]);
 
   // Auto flip dropdown if not enough space
-  const recalcDirection = useCallback(() => {
-    const el = triggerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    const needed = 320;
-    setOpenUpwards(spaceBelow < needed && spaceAbove > spaceBelow);
-  }, []);
+  // const recalcDirection = useCallback(() => {
+  //   const el = triggerRef.current;
+  //   if (!el) return;
+  //   const rect = el.getBoundingClientRect();
+  //   const spaceBelow = window.innerHeight - rect.bottom;
+  //   const spaceAbove = rect.top;
+  //   const needed = 320;
+  //   setOpenUpwards(spaceBelow < needed && spaceAbove > spaceBelow);
+  // }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    recalcDirection();
-    const onScrollOrResize = () => recalcDirection();
-    window.addEventListener("scroll", onScrollOrResize, true);
-    window.addEventListener("resize", onScrollOrResize);
-    return () => {
-      window.removeEventListener("scroll", onScrollOrResize, true);
-      window.removeEventListener("resize", onScrollOrResize);
-    };
-  }, [isOpen, recalcDirection]);
+  // useEffect(() => {
+  //   if (!isOpen) return;
+  //   // recalcDirection();
+  //   // const onScrollOrResize = () => recalcDirection();
+  //   window.addEventListener("scroll", onScrollOrResize, true);
+  //   window.addEventListener("resize", onScrollOrResize);
+  //   return () => {
+  //     window.removeEventListener("scroll", onScrollOrResize, true);
+  //     window.removeEventListener("resize", onScrollOrResize);
+  //   };
+  // }, [isOpen]);
 
   // Close on outside click
   useEffect(() => {
@@ -306,7 +311,7 @@ const TargetPropertyDropdown: React.FC<{
           !disabled &&
           setIsOpen((o) => {
             const n = !o;
-            if (!o) recalcDirection();
+            // if (!o) recalcDirection();
             return n;
           })
         }
@@ -346,7 +351,7 @@ const TargetPropertyDropdown: React.FC<{
       {isOpen && (
         <div
           className={`absolute z-20 w-full bg-white border border-gray-300 rounded-md shadow-lg ${
-            openUpwards ? "bottom-full mb-1" : "mt-5"
+            isLastSix ? "bottom-full mb-1" : "mt-5"
           }`}
           style={{ maxHeight: 320 }}
         >
@@ -470,8 +475,20 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
   // Render a row (shared)
   const renderRow = (row: PreviewRow) => {
     const idx = filteredRowsWithoutDuplicates.indexOf(row);
-    const sourceType = getSourcePropertyType(row.source, row.object);
-    const sourceFieldType = getSourceFieldType(row.source, row.object);
+    let sourceType = getSourcePropertyType(row.source, row.object);
+    let sourceFieldType = getSourceFieldType(row.source, row.object);
+
+    // If it's a custom property, use its actual type/fieldType
+    if (row.type === "custom") {
+      const customProp = (propPool?.[row.object] || []).find(
+        (p) => p.name === row.source || p.label === row.source
+      );
+      if (customProp) {
+        sourceType = customProp.type || sourceType;
+        sourceFieldType = customProp.fieldType || sourceFieldType;
+      }
+    }
+
     const sourceProperty = getPropertiesForObject(row.object).find(
       (prop) => prop.label === row.source || prop.name === row.source
     );
@@ -503,6 +520,8 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
                 disabled={isRequired}
                 propPool={propPool}
                 defaultMapModal={defaultMapModal}
+                rowIndex={idx}
+                totalRows={filteredRowsWithoutDuplicates.length}
               />
             </div>
           ) : (
@@ -520,6 +539,8 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
               disabled={isRequired}
               propPool={propPool}
               defaultMapModal={defaultMapModal}
+              rowIndex={idx}
+              totalRows={filteredRowsWithoutDuplicates.length}
             />
           )}
         </td>
