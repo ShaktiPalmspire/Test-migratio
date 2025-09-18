@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
@@ -16,18 +15,29 @@ import {
 import { ensureValidToken } from "@/utils/cacheUtils";
 
 // Import modular components and utilities
-import { ObjectKey, PreviewRow, PropertyItem, PendingJsonState, EditFormState, CreateFormState } from "./types/propertyTypes";
-import { 
-  slugify, 
-  getDisplayText, 
-  getPropertyLabel, 
-  getInternalNameForLabel, 
-  fixCorruptedProperties, 
-  norm, 
-  getTotalPropertiesCount 
+import {
+  ObjectKey,
+  PreviewRow,
+  PropertyItem,
+  PendingJsonState,
+  EditFormState,
+  CreateFormState,
+} from "./types/propertyTypes";
+import {
+  slugify,
+  getDisplayText,
+  getPropertyLabel,
+  getInternalNameForLabel,
+  fixCorruptedProperties,
+  norm,
+  getTotalPropertiesCount,
 } from "./utils/propertyUtils";
 import { useCustomProperties, usePropertyPool } from "./hooks/usePropertyHooks";
-import { PropertyTable, SearchBar, SummarySection } from "./components/PropertyTableComponents";
+import {
+  PropertyTable,
+  SearchBar,
+  SummarySection,
+} from "./components/PropertyTableComponents";
 import { AddPropertyModal } from "./components/AddPropertyModal";
 import { usePropertyMappings } from "./hooks/usePropertyMappings";
 import { usePropertyEditing } from "./hooks/usePropertyEditing";
@@ -38,27 +48,31 @@ interface Step4PreviewPropertiesProps {
   selectedObjects: Set<ObjectKey>;
 }
 
-export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4PreviewPropertiesProps) {
+export function Step4PreviewProperties({
+  onStepChange,
+  selectedObjects,
+}: Step4PreviewPropertiesProps) {
   const { user, profile, upsertMappedJson } = useUser();
-  const { customProperties, isLoadingCustom, fetchAllCustomProperties } = useCustomProperties(selectedObjects);
+  const { customProperties, isLoadingCustom, fetchAllCustomProperties } =
+    useCustomProperties(selectedObjects);
   const { propPool, loadedLists, loadProps, setPropPool } = usePropertyPool();
-  
+
   // Check if user is admin
   const isAdmin = useMemo(() => {
     if (!user?.email) return false;
-    const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',') || [];
+    const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(",") || [];
     return adminEmails.includes(user.email);
   }, [user?.email]);
-  
+
   // Property mapping logic
-  const { 
-    rows, 
-    setRows, 
-    pendingJson, 
-    setPendingJson, 
-    hasUnsavedChanges, 
+  const {
+    rows,
+    setRows,
+    pendingJson,
+    setPendingJson,
+    hasUnsavedChanges,
     setHasUnsavedChanges,
-    loadMappings 
+    loadMappings,
   } = usePropertyMappings(selectedObjects, profile);
 
   // Property editing logic
@@ -70,15 +84,22 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
     saveEditing,
     handleEditChange,
     deleteUserDefined,
-    reverseCustomProperty
-  } = usePropertyEditing(rows, setRows, setHasUnsavedChanges, setPendingJson, propPool);
+    reverseCustomProperty,
+  } = usePropertyEditing(
+    rows,
+    setRows,
+    setHasUnsavedChanges,
+    setPendingJson,
+    propPool
+  );
 
   // Property saving logic
-  const {
-    isSaving,
-    saveMappings,
-    handleSaveAndProceed
-  } = usePropertySaving(pendingJson, hasUnsavedChanges, setHasUnsavedChanges, onStepChange);
+  const { isSaving, saveMappings, handleSaveAndProceed } = usePropertySaving(
+    pendingJson,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+    onStepChange
+  );
 
   // Search functionality
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -86,7 +107,9 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
     const q = searchQuery.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((r) =>
-      [r.source, r.target, r.object, r.type].map(String).some((v) => v.toLowerCase().includes(q))
+      [r.source, r.target, r.object, r.type]
+        .map(String)
+        .some((v) => v.toLowerCase().includes(q))
     );
   }, [rows, searchQuery]);
 
@@ -94,7 +117,8 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
 
   // Label map for property lookups
   const labelMap = useMemo(() => {
-    const createMap = (arr: any[]) => Object.fromEntries(arr.map((p) => [p.name, p.label || p.name]));
+    const createMap = (arr: any[]) =>
+      Object.fromEntries(arr.map((p) => [p.name, p.label || p.name]));
     return {
       contacts: createMap(hubspotContactProperties),
       companies: createMap(hubspotCompanyProperties),
@@ -106,10 +130,30 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
   // Default property mappings
   const defaultMapModal: Record<ObjectKey, PropertyItem[]> = useMemo(
     () => ({
-      contacts: hubspotContactProperties.map((p) => ({ name: p.name, label: p.label || p.name, type: p.type, fieldType: p.fieldType })),
-      companies: hubspotCompanyProperties.map((p) => ({ name: p.name, label: p.label || p.name, type: p.type, fieldType: p.fieldType })),
-      deals: hubspotDealProperties.map((p) => ({ name: p.name, label: p.label || p.name, type: p.type, fieldType: p.fieldType })),
-      tickets: hubspotTicketProperties.map((p) => ({ name: p.name, label: p.label || p.name, type: p.type, fieldType: p.fieldType })),
+      contacts: hubspotContactProperties.map((p) => ({
+        name: p.name,
+        label: p.label || p.name,
+        type: p.type,
+        fieldType: p.fieldType,
+      })),
+      companies: hubspotCompanyProperties.map((p) => ({
+        name: p.name,
+        label: p.label || p.name,
+        type: p.type,
+        fieldType: p.fieldType,
+      })),
+      deals: hubspotDealProperties.map((p) => ({
+        name: p.name,
+        label: p.label || p.name,
+        type: p.type,
+        fieldType: p.fieldType,
+      })),
+      tickets: hubspotTicketProperties.map((p) => ({
+        name: p.name,
+        label: p.label || p.name,
+        type: p.type,
+        fieldType: p.fieldType,
+      })),
     }),
     []
   );
@@ -117,7 +161,9 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
   const defaultMetaByName = useMemo(() => {
     const build = (arr: PropertyItem[]) => {
       const m: Record<string, { type?: string; fieldType?: string }> = {};
-      arr.forEach((p) => (m[p.name] = { type: p.type, fieldType: p.fieldType }));
+      arr.forEach(
+        (p) => (m[p.name] = { type: p.type, fieldType: p.fieldType })
+      );
       return m;
     };
     return {
@@ -131,7 +177,6 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
   // Handle adding new property mapping
   const handleAddProperty = async (createdProperty?: PropertyItem) => {
     try {
-      
       // If a custom property was created, we should proceed even if selectedProperty is empty
       if (!selectedProperty && !createdProperty) {
         return;
@@ -143,24 +188,29 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
       let targetName = selectedTargetName || selectedProperty;
       let sourceName = selectedProperty;
       let targetLabel = selectedTargetName;
-      
+
       if (createdProperty) {
         propertyType = "userdefined"; // Newly created properties should be userdefined
         targetName = createdProperty.name;
         targetLabel = createdProperty.label;
         sourceName = selectedProperty || createdProperty.label; // Use selectedProperty if available, otherwise use label
         // Check if this is a custom property by looking at the propPool
-        const isCustomProperty = propPool[addObject]?.some(p => p.name === selectedTargetName) || false;
-        
+        const isCustomProperty =
+          propPool[addObject]?.some((p) => p.name === selectedTargetName) ||
+          false;
+
         // Additional check: if selectedTargetName is not empty and doesn't match any existing property,
         // it might be a newly created custom property
-        const isNewCustomProperty = selectedTargetName && !propPool[addObject]?.some(p => p.name === selectedTargetName);
+        const isNewCustomProperty =
+          selectedTargetName &&
+          !propPool[addObject]?.some((p) => p.name === selectedTargetName);
 
         // Check if this is a user-defined property by looking at localStorage
         const udKey = `userDefinedProps:${addObject}`;
-        const userDefinedProps = JSON.parse(localStorage.getItem(udKey) || "[]");
+        const userDefinedProps = JSON.parse(
+          localStorage.getItem(udKey) || "[]"
+        );
         const isUserDefined = userDefinedProps.includes(selectedTargetName);
-
 
         // Determine the type based on various checks
         if (isUserDefined) {
@@ -171,16 +221,20 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
           // If we have both source and target selected, this is likely a user-defined mapping
           propertyType = "userdefined";
         }
-        
+
         // Get target label from propPool or defaultMapModal
-        const targetProperty = propPool[addObject]?.find(p => p.name === selectedTargetName) || 
-                             defaultMapModal[addObject]?.find(p => p.name === selectedTargetName);
+        const targetProperty =
+          propPool[addObject]?.find((p) => p.name === selectedTargetName) ||
+          defaultMapModal[addObject]?.find(
+            (p) => p.name === selectedTargetName
+          );
         targetLabel = targetProperty?.label || selectedTargetName;
       } else {
         // Mapping to an existing property via dropdown (no checkbox)
         // Treat as custom mapping and pull proper target label
-        const targetProperty = propPool[addObject]?.find(p => p.name === targetName)
-          || defaultMapModal[addObject]?.find(p => p.name === targetName);
+        const targetProperty =
+          propPool[addObject]?.find((p) => p.name === targetName) ||
+          defaultMapModal[addObject]?.find((p) => p.name === targetName);
         targetLabel = targetProperty?.label || targetName;
         propertyType = "custom";
       }
@@ -193,9 +247,8 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
         type: propertyType,
       };
 
-
       // Add to rows
-      setRows(prevRows => {
+      setRows((prevRows) => {
         const newRows = [...prevRows, newRow];
         return newRows;
       });
@@ -203,7 +256,6 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
 
       // Save mapping to database
       try {
-        
         const mappingData = {
           [addObject]: {
             [targetName]: {
@@ -213,17 +265,17 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
               sourceName: selectedSource?.label || sourceName,
               newProperty: propertyType === "userdefined", // only true when created via checkbox
               type: propertyType,
-              objectType: addObject
-            }
-          }
+              objectType: addObject,
+            },
+          },
         };
-        
+
         await upsertMappedJson(mappingData);
         try {
-          window.dispatchEvent(new Event('mappings-updated'));
+          window.dispatchEvent(new Event("mappings-updated"));
         } catch {}
       } catch (error) {
-        console.error('❌ [DATABASE_SAVE] Error saving mapping:', error);
+        console.error("❌ [DATABASE_SAVE] Error saving mapping:", error);
       }
 
       // Reset form
@@ -232,9 +284,11 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
 
       // Close modal
       setIsAddOpen(false);
-
     } catch (error) {
-      console.error('❌ [PARENT_ADD_PROPERTY] Error in handleAddProperty:', error);
+      console.error(
+        "❌ [PARENT_ADD_PROPERTY] Error in handleAddProperty:",
+        error
+      );
       // Even if there's an error, try to close the modal
       setIsAddOpen(false);
     }
@@ -267,8 +321,7 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
   const [isAtBottom, setIsAtBottom] = useState(false);
 
   // Debug addObject state
-  useEffect(() => {
-  }, [selectedObjects, addObject]);
+  useEffect(() => {}, [selectedObjects, addObject]);
 
   // Update addObject when selectedObjects changes (only if addObject is not in selectedObjects AND modal is not open)
   useEffect(() => {
@@ -290,25 +343,26 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
   useEffect(() => {
     const handleScroll = () => {
       // Check if we're at the bottom
-      const isBottom = window.scrollY + window.innerHeight >= document.body.scrollHeight - 10;
+      const isBottom =
+        window.scrollY + window.innerHeight >= document.body.scrollHeight - 10;
       setIsAtBottom(isBottom);
     };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const scrollToBottom = () => {
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
   };
 
   const toggleScroll = () => {
     if (isAtBottom) {
       scrollToTop();
-  } else {
+    } else {
       scrollToBottom();
     }
   };
@@ -321,13 +375,13 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
   // Load mappings on mount
   useEffect(() => {
     // Clear all caches to ensure fresh data
-    selectedObjects.forEach(obj => {
+    selectedObjects.forEach((obj) => {
       const customCacheKey = `customProperties_${obj}`;
       const udCacheKey = `userDefinedProps:${obj}`;
       localStorage.removeItem(customCacheKey);
       localStorage.removeItem(udCacheKey);
     });
-    
+
     loadMappings();
   }, [selectedObjects]);
 
@@ -345,11 +399,23 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
       loadMappings();
     };
 
-    window.addEventListener('propertyDeleted', handlePropertyDeleted as EventListener);
-    window.addEventListener('propertyEdited', handlePropertyEdited as EventListener);
+    window.addEventListener(
+      "propertyDeleted",
+      handlePropertyDeleted as EventListener
+    );
+    window.addEventListener(
+      "propertyEdited",
+      handlePropertyEdited as EventListener
+    );
     return () => {
-      window.removeEventListener('propertyDeleted', handlePropertyDeleted as EventListener);
-      window.removeEventListener('propertyEdited', handlePropertyEdited as EventListener);
+      window.removeEventListener(
+        "propertyDeleted",
+        handlePropertyDeleted as EventListener
+      );
+      window.removeEventListener(
+        "propertyEdited",
+        handlePropertyEdited as EventListener
+      );
     };
   }, [selectedObjects, loadMappings]);
 
@@ -363,21 +429,31 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
 
   // Load custom properties
   useEffect(() => {
-    console.log('🔄 [STEP4] fetchAllCustomProperties called for selectedObjects:', Array.from(selectedObjects));
+    console.log(
+      "🔄 [STEP4] fetchAllCustomProperties called for selectedObjects:",
+      Array.from(selectedObjects)
+    );
     fetchAllCustomProperties();
   }, [selectedObjects]);
 
   // Integrate custom properties into rows
   useEffect(() => {
-    
     if (customProperties && Object.keys(customProperties).length > 0) {
-      console.log('🔄 [STEP4] Custom properties found:', customProperties);
+      console.log("🔄 [STEP4] Custom properties found:", customProperties);
       const customRows: PreviewRow[] = [];
-      
+
       Object.entries(customProperties).forEach(([objectType, properties]) => {
-        console.log(`🔄 [STEP4] Processing ${objectType}:`, properties.length, 'properties');
-        
-        if (selectedObjects.has(objectType as ObjectKey) && Array.isArray(properties) && properties.length > 0) {
+        console.log(
+          `🔄 [STEP4] Processing ${objectType}:`,
+          properties.length,
+          "properties"
+        );
+
+        if (
+          selectedObjects.has(objectType as ObjectKey) &&
+          Array.isArray(properties) &&
+          properties.length > 0
+        ) {
           properties.forEach((prop: any) => {
             customRows.push({
               object: objectType as ObjectKey,
@@ -389,17 +465,22 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
         }
       });
 
-      console.log('🔄 [STEP4] Total custom rows created:', customRows.length);
+      console.log("🔄 [STEP4] Total custom rows created:", customRows.length);
 
       // Merge custom properties with existing rows
       if (customRows.length > 0) {
-        setRows(prevRows => {
+        setRows((prevRows) => {
           // Keep existing custom rows from database and add new HubSpot custom properties
           // Only add HubSpot custom properties that don't already exist
-          const existingCustomSources = new Set(prevRows.filter(row => row.type === "custom").map(row => row.source));
-          const newHubSpotCustomRows = customRows.filter(row => !existingCustomSources.has(row.source));
-          
-          
+          const existingCustomSources = new Set(
+            prevRows
+              .filter((row) => row.type === "custom")
+              .map((row) => row.source)
+          );
+          const newHubSpotCustomRows = customRows.filter(
+            (row) => !existingCustomSources.has(row.source)
+          );
+
           const finalRows = [...prevRows, ...newHubSpotCustomRows];
           return finalRows;
         });
@@ -411,18 +492,23 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
   const sourceList = useMemo(() => {
     // Always use defaultMapModal as fallback, even if propPool is empty
     const list = propPool[addObject] || defaultMapModal[addObject] || [];
-    
+
     // If still empty, provide some basic fallback properties
     if (list.length === 0) {
       const fallbackProps = [
-        { name: 'name', label: 'Name', type: 'string', fieldType: 'text' },
-        { name: 'email', label: 'Email', type: 'string', fieldType: 'text' },
-        { name: 'phone', label: 'Phone', type: 'string', fieldType: 'text' },
-        { name: 'createdate', label: 'Create Date', type: 'datetime', fieldType: 'date' },
+        { name: "name", label: "Name", type: "string", fieldType: "text" },
+        { name: "email", label: "Email", type: "string", fieldType: "text" },
+        { name: "phone", label: "Phone", type: "string", fieldType: "text" },
+        {
+          name: "createdate",
+          label: "Create Date",
+          type: "datetime",
+          fieldType: "date",
+        },
       ];
       return fallbackProps;
     }
-    
+
     return Array.isArray(list) ? list : [];
   }, [propPool, defaultMapModal, addObject]);
 
@@ -433,33 +519,37 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
 
   const filteredTargetList = useMemo(() => {
     if (!selectedProperty) return targetList;
-    
+
     // Find the selected source property to get its type and fieldType
-    const selectedSourceProp = sourceList.find(p => p.name === selectedProperty);
+    const selectedSourceProp = sourceList.find(
+      (p) => p.name === selectedProperty
+    );
     if (!selectedSourceProp) return targetList;
-    
+
     // Filter target properties by matching type and fieldType
-    return targetList.filter(targetProp => 
-      targetProp.type === selectedSourceProp.type && 
-      targetProp.fieldType === selectedSourceProp.fieldType
+    return targetList.filter(
+      (targetProp) =>
+        targetProp.type === selectedSourceProp.type &&
+        targetProp.fieldType === selectedSourceProp.fieldType
     );
   }, [targetList, selectedProperty, sourceList]);
 
   const selectedSource = useMemo(() => {
-    return sourceList.find(p => p.name === selectedProperty);
+    return sourceList.find((p) => p.name === selectedProperty);
   }, [sourceList, selectedProperty]);
-
 
   // Load property pools
   useEffect(() => {
-    Array.from(selectedObjects).sort((a, b) => {
-      const order = { contacts: 0, companies: 1, deals: 2, tickets: 3 };
-      return order[a] - order[b];
-    }).forEach((obj) => {
-      if (!loadedLists[obj]) {
-        loadProps(obj, defaultMapModal, defaultMetaByName);
-      }
-    });
+    Array.from(selectedObjects)
+      .sort((a, b) => {
+        const order = { contacts: 0, companies: 1, deals: 2, tickets: 3 };
+        return order[a] - order[b];
+      })
+      .forEach((obj) => {
+        if (!loadedLists[obj]) {
+          loadProps(obj, defaultMapModal, defaultMetaByName);
+        }
+      });
   }, [selectedObjects, loadedLists, defaultMapModal, defaultMetaByName]);
 
   // Load properties when modal opens or addObject changes
@@ -486,38 +576,38 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
   }, [isAddOpen, selectedObjects, addObject]);
 
   const clearAllCaches = useCallback(() => {
-    
-    selectedObjects.forEach(obj => {
+    selectedObjects.forEach((obj) => {
       const customCacheKey = `customProperties_${obj}`;
       const udCacheKey = `userDefinedProps:${obj}`;
       const schemaCacheKey = `schema:${obj}:labels:`;
       const fetchedCacheKey = `fetchedInSessionObjects`;
-      
+
       // Clear localStorage
       localStorage.removeItem(customCacheKey);
       localStorage.removeItem(udCacheKey);
-      
+
       // Clear sessionStorage
       sessionStorage.removeItem(customCacheKey);
       sessionStorage.removeItem(udCacheKey);
-      
+
       // Clear all schema-related caches
-      Object.keys(localStorage).forEach(key => {
+      Object.keys(localStorage).forEach((key) => {
         if (key.startsWith(schemaCacheKey)) {
           localStorage.removeItem(key);
         }
       });
-      
+
       // Clear fetched objects cache
       sessionStorage.removeItem(fetchedCacheKey);
-      
     });
   }, [selectedObjects]);
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Step 4: Preview & Configure Properties</h2>
+        <h2 className="text-2xl font-bold">
+          Step 4: Preview & Configure Properties
+        </h2>
         <div className="flex gap-2">
           {isAdmin && (
             <>
@@ -536,7 +626,6 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
               <Button
                 variant="secondary"
                 onClick={() => {
-                  
                   // Force reload from database
                   clearAllCaches();
                   loadMappings();
@@ -563,10 +652,7 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
         </div>
       </div>
 
-      <SearchBar 
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-      />
+      <SearchBar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
       <PropertyTable
         rows={rows}
@@ -589,6 +675,11 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
           setRows(updatedRows);
           setHasUnsavedChanges(true);
         }}
+        setRows={setRows}
+        setHasUnsavedChanges={setHasUnsavedChanges}
+        setPendingJson={setPendingJson}
+        propPool={propPool as Record<ObjectKey, PropertyItem[]>}
+        defaultMapModal={defaultMapModal}
       />
 
       <SummarySection
@@ -625,7 +716,9 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
         selectedSource={selectedSource}
         propPool={propPool}
         defaultMapModal={defaultMapModal}
-        loadProps={(obj: ObjectKey) => loadProps(obj, defaultMapModal, defaultMetaByName)}
+        loadProps={(obj: ObjectKey) =>
+          loadProps(obj, defaultMapModal, defaultMetaByName)
+        }
         selectedObjects={selectedObjects}
         setPropPool={setPropPool}
       />
@@ -633,8 +726,8 @@ export function Step4PreviewProperties({ onStepChange, selectedObjects }: Step4P
       {hasUnsavedChanges && (
         <div className="fixed bottom-4 right-4 bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded shadow-lg">
           ⚠️ You have unsaved changes
-              </div>
-            )}
+        </div>
+      )}
 
       {/* Single scroll toggle button - always visible */}
       <button

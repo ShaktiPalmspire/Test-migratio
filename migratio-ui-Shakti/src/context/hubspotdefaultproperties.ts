@@ -3746,8 +3746,7 @@ export const hubspotCompanyProperties: HubSpotDefaultProperty[] = [
     "label": "Twitter Handle",
     "sr_no": 177,
     "type": "string",
-    "fieldType": "text",
-    "required": true
+    "fieldType": "text"
   },
   {
     "name": "type",
@@ -3922,8 +3921,7 @@ export const hubspotDealProperties: HubSpotDefaultProperty[] = [
     "label": "Campaign of last booking in meetings tool",
     "sr_no": 15,
     "type": "string",
-    "fieldType": "text",
-    "required": true
+    "fieldType": "text"
   },
   {
     "name": "closedate",
@@ -5799,8 +5797,7 @@ export const hubspotTicketProperties: HubSpotDefaultProperty[] = [
     "label": "Last email activity",
     "sr_no": 92,
     "type": "enumeration",
-    "fieldType": "select",
-    "required": true
+    "fieldType": "select"
   },
   {
     "name": "hs_last_email_date",

@@ -5,7 +5,12 @@ import React, {
   useRef,
   useCallback,
 } from "react";
-import { PreviewRow, ObjectKey } from "../types/propertyTypes";
+import {
+  PreviewRow,
+  ObjectKey,
+  PendingJsonState,
+  PropertyItem,
+} from "../types/propertyTypes";
 import { StepIndex } from "../../types/dashboard";
 import Button from "@/components/Buttons/button";
 import {
@@ -32,11 +37,18 @@ interface PropertyTableProps {
   selectedObjects: Set<ObjectKey>;
   onAddProperty?: () => void;
   onRowUpdate?: (index: number, updatedRow: PreviewRow) => void;
+  setRows: (rows: PreviewRow[]) => void;
+  setHasUnsavedChanges: (hasChanges: boolean) => void;
+  setPendingJson: (
+    updater: (prev: PendingJsonState) => PendingJsonState
+  ) => void;
+  propPool?: Record<ObjectKey, PropertyItem[]>;
+  defaultMapModal?: Record<ObjectKey, PropertyItem[]>;
 }
 
 /* =========================
-   Helpers for default props
-   ========================= */
+Helpers for default props
+========================= */
 
 const getPropertiesForObject = (
   objectType: ObjectKey
@@ -82,8 +94,8 @@ const getSourceFieldType = (
 };
 
 /* ==============================
-   Target Property Dropdown (UI)
-   ============================== */
+Target Property Dropdown (UI)
+============================== */
 
 const TargetPropertyDropdown: React.FC<{
   value: string;
@@ -93,7 +105,9 @@ const TargetPropertyDropdown: React.FC<{
   sourceFieldType?: string;
   placeholder?: string;
   userDefinedProperties?: string[];
-  disabled?: boolean; // Add this line
+  disabled?: boolean;
+  propPool?: Record<ObjectKey, PropertyItem[]>;
+  defaultMapModal?: Record<ObjectKey, PropertyItem[]>;
 }> = ({
   value,
   onChange,
@@ -102,7 +116,9 @@ const TargetPropertyDropdown: React.FC<{
   sourceFieldType,
   placeholder = "Select property...",
   userDefinedProperties = [],
-  disabled = false, // Add this line
+  disabled = false,
+  propPool,
+  defaultMapModal,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -115,17 +131,25 @@ const TargetPropertyDropdown: React.FC<{
   const defaultProperties = getPropertiesForObject(objectType);
 
   // Combine defaults + user-defined (user-defined carry current source types)
+  // ✅ REPLACE THE EXISTING properties useMemo WITH THIS:
   const properties = useMemo(() => {
-    const userDefinedProps = userDefinedProperties.map((name) => ({
+    const defaultProps = getPropertiesForObject(objectType);
+    const customProps = (propPool?.[objectType] || []) as PropertyItem[];
+    const userDefined = (userDefinedProperties || []).map((name) => ({
       name,
       label: name,
       type: sourcePropertyType || "string",
       fieldType: sourceFieldType || "text",
       required: false,
-    }));
-    return [...defaultProperties, ...userDefinedProps];
+    })) as PropertyItem[];
+
+    const merged = [...defaultProps, ...customProps, ...userDefined];
+    return merged.filter(
+      (p, i, self) => self.findIndex((x) => x.name === p.name) === i
+    );
   }, [
-    defaultProperties,
+    objectType,
+    propPool,
     userDefinedProperties,
     sourcePropertyType,
     sourceFieldType,
@@ -135,9 +159,18 @@ const TargetPropertyDropdown: React.FC<{
   const filteredProperties = useMemo(() => {
     return properties.filter((p: any) => {
       const notRequired = p.required !== true; // include when false/undefined
-      const typeOk = !sourcePropertyType || p.type === sourcePropertyType;
-      const fieldOk = !sourceFieldType || p.fieldType === sourceFieldType;
-      return notRequired && typeOk && fieldOk;
+
+      // ✅ STRICT TYPE FILTERING - Only show if both type AND fieldType match
+      if (sourcePropertyType && sourceFieldType) {
+
+
+        const typeMatches = p.type === sourcePropertyType;
+        const fieldMatches = p.fieldType === sourceFieldType;
+        return notRequired && typeMatches && fieldMatches;
+      }
+
+      // If no source type info, show all non-required
+      return notRequired;
     });
   }, [properties, sourcePropertyType, sourceFieldType]);
 
@@ -280,24 +313,34 @@ const TargetPropertyDropdown: React.FC<{
         disabled={disabled}
         className={`w-full px-3 py-2 text-left border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
           disabled
-            ? "bg-gray-100 cursor-not-allowed opacity-60"
+            ? "bg-gray-100 cursor-not-allowed text-gray-900-important"
             : "bg-white hover:bg-gray-50"
         }`}
       >
         {currentProperty ? currentProperty.label : value || placeholder}
-        <svg
-          className="w-5 h-5 ml-2 float-right"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
+        {disabled ? (
+          <svg
+            className="w-5 h-5 ml-2 float-right"
+            fill="#1447e6"
+            viewBox="0 0 24 24"
+          >
+            <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15.1 8H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
+          </svg>
+        ) : (
+          <svg
+            className="w-5 h-5 ml-2 float-right"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        )}
       </button>
 
       {isOpen && (
@@ -312,12 +355,9 @@ const TargetPropertyDropdown: React.FC<{
               type="text"
               placeholder="Search properties..."
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setSelectedIndex(-1);
-              }}
-              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              onChange={(e) => setSearchTerm(e.target.value)}
               autoFocus
+              className="w-full px-2 py-1 text-sm border border-gray-200 rounded placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
@@ -360,25 +400,21 @@ const TargetPropertyDropdown: React.FC<{
 };
 
 /* =======================
-   Property Table Wrapper
-   ======================= */
+Property Table Wrapper
+======================= */
 
 export const PropertyTable: React.FC<PropertyTableProps> = ({
   rows,
   filteredRows,
-  searchQuery,
-  onSearchChange,
   editingRow,
   editForm,
   onEditChange,
-  onStartEditing,
-  onSaveEditing,
-  onCancelEditing,
   onDeleteUserDefined,
   onReverseCustomProperty,
-  selectedObjects,
   onAddProperty,
   onRowUpdate,
+  propPool,
+  defaultMapModal,
 }) => {
   // Collect user-defined properties by object to surface in dropdown
   const userDefinedProperties = useMemo(() => {
@@ -465,6 +501,8 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
                 placeholder="Select target property..."
                 userDefinedProperties={userDefinedProperties[row.object]}
                 disabled={isRequired}
+                propPool={propPool}
+                defaultMapModal={defaultMapModal}
               />
             </div>
           ) : (
@@ -480,6 +518,8 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
               placeholder="Select target property..."
               userDefinedProperties={userDefinedProperties[row.object]}
               disabled={isRequired}
+              propPool={propPool}
+              defaultMapModal={defaultMapModal}
             />
           )}
         </td>
@@ -512,12 +552,45 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
                 Delete
               </button>
             )}
-            {row.type === "custom" && onReverseCustomProperty && (
+            {/* Reset button - Simple version */}
+            {!isRequired &&
+              row.type !== "userdefined" &&
+              row.source !== row.target && (
+                <button
+                  onClick={() => {
+                    // Simple approach - just call onRowUpdate
+                    const updatedRow = { ...row, target: row.source };
+                    onRowUpdate?.(idx, updatedRow);
+
+                    // Also call reverse function if available
+                    onReverseCustomProperty?.(idx);
+                  }}
+                  className="p-1 text-orange-600 hover:text-orange-800 hover:bg-orange-50 rounded"
+                  title="Reset target to source"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+                  </svg>
+                </button>
+              )}
+
+            {!isRequired && (
               <button
-                onClick={() => onReverseCustomProperty(idx)}
-                className="text-orange-600 hover:text-orange-900"
+                onClick={() => onDeleteUserDefined(idx)}
+                className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                title="Remove property"
               >
-                Reverse
+                <svg
+                  className="w-4 h-4"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                </svg>
               </button>
             )}
           </div>
@@ -592,8 +665,8 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
 };
 
 /* ==================
-   Search & Summary
-   ================== */
+Search & Summary
+================== */
 
 interface SearchBarProps {
   searchQuery: string;
@@ -629,6 +702,12 @@ interface SummarySectionProps {
   canProceed: boolean;
   hasUnsavedChanges: boolean;
   onStepChange: (step: StepIndex) => void;
+  defaultProperties?: {
+    contacts: any[];
+    companies: any[];
+    deals: any[];
+    tickets: any[];
+  };
 }
 
 export const SummarySection: React.FC<SummarySectionProps> = ({

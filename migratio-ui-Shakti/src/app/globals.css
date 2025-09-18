@@ -45,3 +45,6 @@ header a[href="/"]:hover,
 nav a[href="/"]:hover {
   text-decoration: none !important;
 }
+.text-gray-900-important{
+    color: var(--color-gray-900) !important;
+}
