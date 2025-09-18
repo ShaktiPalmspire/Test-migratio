@@ -38,7 +38,9 @@ interface PropertyTableProps {
    Helpers for default props
    ========================= */
 
-const getPropertiesForObject = (objectType: ObjectKey): HubSpotDefaultProperty[] => {
+const getPropertiesForObject = (
+  objectType: ObjectKey
+): HubSpotDefaultProperty[] => {
   switch (objectType) {
     case "contacts":
       return hubspotContactProperties;
@@ -60,7 +62,8 @@ const getSourcePropertyType = (
 ): string | undefined => {
   const properties = getPropertiesForObject(objectType);
   const sourceProperty = properties.find(
-    (prop) => prop.label === sourcePropertyName || prop.name === sourcePropertyName
+    (prop) =>
+      prop.label === sourcePropertyName || prop.name === sourcePropertyName
   );
   return sourceProperty?.type;
 };
@@ -72,7 +75,8 @@ const getSourceFieldType = (
 ): string | undefined => {
   const properties = getPropertiesForObject(objectType);
   const sourceProperty = properties.find(
-    (prop) => prop.label === sourcePropertyName || prop.name === sourcePropertyName
+    (prop) =>
+      prop.label === sourcePropertyName || prop.name === sourcePropertyName
   );
   return sourceProperty?.fieldType;
 };
@@ -89,6 +93,7 @@ const TargetPropertyDropdown: React.FC<{
   sourceFieldType?: string;
   placeholder?: string;
   userDefinedProperties?: string[];
+  disabled?: boolean; // Add this line
 }> = ({
   value,
   onChange,
@@ -97,6 +102,7 @@ const TargetPropertyDropdown: React.FC<{
   sourceFieldType,
   placeholder = "Select property...",
   userDefinedProperties = [],
+  disabled = false, // Add this line
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -118,7 +124,12 @@ const TargetPropertyDropdown: React.FC<{
       required: false,
     }));
     return [...defaultProperties, ...userDefinedProps];
-  }, [defaultProperties, userDefinedProperties, sourcePropertyType, sourceFieldType]);
+  }, [
+    defaultProperties,
+    userDefinedProperties,
+    sourcePropertyType,
+    sourceFieldType,
+  ]);
 
   // Filter: same type + same fieldType + not required
   const filteredProperties = useMemo(() => {
@@ -155,7 +166,13 @@ const TargetPropertyDropdown: React.FC<{
       } as any;
     }
     return prop;
-  }, [properties, value, userDefinedProperties, sourcePropertyType, sourceFieldType]);
+  }, [
+    properties,
+    value,
+    userDefinedProperties,
+    sourcePropertyType,
+    sourceFieldType,
+  ]);
 
   // Auto flip dropdown if not enough space
   const recalcDirection = useCallback(() => {
@@ -183,7 +200,10 @@ const TargetPropertyDropdown: React.FC<{
   // Close on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
         setSearchTerm("");
         setSelectedIndex(-1);
@@ -249,20 +269,42 @@ const TargetPropertyDropdown: React.FC<{
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setIsOpen((o) => { const n = !o; if (!o) recalcDirection(); return n; })}
-        className="w-full px-3 py-2 text-left border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        onClick={() =>
+          !disabled &&
+          setIsOpen((o) => {
+            const n = !o;
+            if (!o) recalcDirection();
+            return n;
+          })
+        }
+        disabled={disabled}
+        className={`w-full px-3 py-2 text-left border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+          disabled
+            ? "bg-gray-100 cursor-not-allowed opacity-60"
+            : "bg-white hover:bg-gray-50"
+        }`}
       >
-        <div className="flex justify-between items-center">
-          <span className={currentProperty ? "text-gray-900" : "text-black"}>
-            {currentProperty ? currentProperty.label : (value || placeholder)}
-          </span>
-          <span className="text-gray-400">▼</span>
-        </div>
+        {currentProperty ? currentProperty.label : value || placeholder}
+        <svg
+          className="w-5 h-5 ml-2 float-right"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
       </button>
 
       {isOpen && (
         <div
-          className={`absolute z-20 w-full bg-white border border-gray-300 rounded-md shadow-lg ${openUpwards ? "bottom-full mb-1" : "mt-5"}`}
+          className={`absolute z-20 w-full bg-white border border-gray-300 rounded-md shadow-lg ${
+            openUpwards ? "bottom-full mb-1" : "mt-5"
+          }`}
           style={{ maxHeight: 320 }}
         >
           <div className="p-2 border-b border-gray-200">
@@ -270,7 +312,10 @@ const TargetPropertyDropdown: React.FC<{
               type="text"
               placeholder="Search properties..."
               value={searchTerm}
-              onChange={(e) => { setSearchTerm(e.target.value); setSelectedIndex(-1); }}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setSelectedIndex(-1);
+              }}
               className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
               autoFocus
             />
@@ -280,7 +325,8 @@ const TargetPropertyDropdown: React.FC<{
             {searchedList.map((prop, index) => {
               const isSelected =
                 (!!currentProperty && prop.name === currentProperty.name) ||
-                prop.label === value || prop.name === value;
+                prop.label === value ||
+                prop.name === value;
 
               return (
                 <button
@@ -289,7 +335,9 @@ const TargetPropertyDropdown: React.FC<{
                   onClick={() => handleSelect(prop as HubSpotDefaultProperty)}
                   className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-100 focus:outline-none focus:bg-gray-100 ${
                     index === selectedIndex ? "bg-gray-100" : ""
-                  } ${isSelected ? "bg-blue-50 text-blue-700" : "text-gray-900"}`}
+                  } ${
+                    isSelected ? "bg-blue-50 text-blue-700" : "text-gray-900"
+                  }`}
                 >
                   <div className="font-medium">{(prop as any).label}</div>
                   <div className="text-xs text-gray-500">
@@ -300,7 +348,9 @@ const TargetPropertyDropdown: React.FC<{
               );
             })}
             {searchedList.length === 0 && (
-              <div className="px-3 py-2 text-sm text-gray-500">No properties found</div>
+              <div className="px-3 py-2 text-sm text-gray-500">
+                No properties found
+              </div>
             )}
           </div>
         </div>
@@ -371,8 +421,12 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
   // Split in visual groups (keeps editing index stable)
   const groups = useMemo(() => {
     return {
-      default: filteredRowsWithoutDuplicates.filter((r) => r.type === "default"),
-      userdefined: filteredRowsWithoutDuplicates.filter((r) => r.type === "userdefined"),
+      default: filteredRowsWithoutDuplicates.filter(
+        (r) => r.type === "default"
+      ),
+      userdefined: filteredRowsWithoutDuplicates.filter(
+        (r) => r.type === "userdefined"
+      ),
       custom: filteredRowsWithoutDuplicates.filter((r) => r.type === "custom"),
     };
   }, [filteredRowsWithoutDuplicates]);
@@ -382,11 +436,23 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
     const idx = filteredRowsWithoutDuplicates.indexOf(row);
     const sourceType = getSourcePropertyType(row.source, row.object);
     const sourceFieldType = getSourceFieldType(row.source, row.object);
-
+    const sourceProperty = getPropertiesForObject(row.object).find(
+      (prop) => prop.label === row.source || prop.name === row.source
+    );
+    const isRequired = sourceProperty?.required === true;
     return (
       <tr key={`${row.object}|${row.source}|${idx}`}>
-        <td className="px-3 py-4 text-sm font-medium text-gray-900">{row.source}</td>
-
+        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+          {row.source}
+          {(() => {
+            const sourceProperty = getPropertiesForObject(row.object).find(
+              (prop) => prop.label === row.source || prop.name === row.source
+            );
+            return sourceProperty?.required ? (
+              <span className="text-red-500 ml-1">*</span>
+            ) : null;
+          })()}
+        </td>
         <td className="px-3 py-4 text-sm text-gray-500">
           {editingRow === idx ? (
             <div className="flex items-center gap-2">
@@ -398,6 +464,7 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
                 sourceFieldType={sourceFieldType}
                 placeholder="Select target property..."
                 userDefinedProperties={userDefinedProperties[row.object]}
+                disabled={isRequired}
               />
             </div>
           ) : (
@@ -412,11 +479,14 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
               sourceFieldType={sourceFieldType}
               placeholder="Select target property..."
               userDefinedProperties={userDefinedProperties[row.object]}
+              disabled={isRequired}
             />
           )}
         </td>
 
-        <td className="px-3 py-4 text-sm text-gray-500 capitalize">{row.object}</td>
+        <td className="px-3 py-4 text-sm text-gray-500 capitalize">
+          {row.object}
+        </td>
 
         <td className="px-3 py-4 text-sm text-gray-500">
           <span
@@ -465,7 +535,9 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
     <div className="bg-white shadow overflow-hidden sm:rounded-md">
       <div className="px-4 py-5 sm:p-6">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Property Mappings</h3>
+          <h3 className="text-lg leading-6 font-medium text-gray-900">
+            Property Mappings
+          </h3>
           {onAddProperty && (
             <button
               onClick={onAddProperty}
@@ -509,7 +581,8 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
         {filteredRowsWithoutDuplicates.length === 0 && (
           <div className="text-center py-8">
             <p className="text-gray-500">
-              No properties found. Try adjusting your search or add new properties.
+              No properties found. Try adjusting your search or add new
+              properties.
             </p>
           </div>
         )}
@@ -527,7 +600,10 @@ interface SearchBarProps {
   onSearchChange: (query: string) => void;
 }
 
-export const SearchBar: React.FC<SearchBarProps> = ({ searchQuery, onSearchChange }) => (
+export const SearchBar: React.FC<SearchBarProps> = ({
+  searchQuery,
+  onSearchChange,
+}) => (
   <div className="mb-4 flex items-center gap-3">
     <input
       type="text"
@@ -537,7 +613,10 @@ export const SearchBar: React.FC<SearchBarProps> = ({ searchQuery, onSearchChang
       className="w-full md:w-96 px-3 py-2 border border-gray-300 rounded-md text-sm"
     />
     {searchQuery && (
-      <button onClick={() => onSearchChange("")} className="text-xs text-gray-600 underline">
+      <button
+        onClick={() => onSearchChange("")}
+        className="text-xs text-gray-600 underline"
+      >
         Clear
       </button>
     )}
@@ -589,29 +668,37 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     tickets: hubspotTicketProperties.length,
   };
 
-  const getDefaultCount = (objectType: ObjectKey) => defaultCountsMap[objectType] || 0;
-  const getTotalDefaultCount = () => Object.values(defaultCountsMap).reduce((a, b) => a + b, 0);
+  const getDefaultCount = (objectType: ObjectKey) =>
+    defaultCountsMap[objectType] || 0;
+  const getTotalDefaultCount = () =>
+    Object.values(defaultCountsMap).reduce((a, b) => a + b, 0);
   const getTotalCustomCount = () =>
     filteredRowsWithoutDuplicates.filter((r) => r.type === "custom").length;
   const getTotalUserDefinedCount = () =>
-    filteredRowsWithoutDuplicates.filter((r) => r.type === "userdefined").length;
+    filteredRowsWithoutDuplicates.filter((r) => r.type === "userdefined")
+      .length;
   const getTotalCount = () =>
     getTotalDefaultCount() + getTotalCustomCount() + getTotalUserDefinedCount();
   const getCustomCount = (objectType: ObjectKey) =>
-    filteredRowsWithoutDuplicates.filter((r) => r.object === objectType && r.type === "custom")
-      .length;
+    filteredRowsWithoutDuplicates.filter(
+      (r) => r.object === objectType && r.type === "custom"
+    ).length;
   const getUserDefinedCount = (objectType: ObjectKey) =>
-    filteredRowsWithoutDuplicates.filter((r) => r.object === objectType && r.type === "userdefined")
-      .length;
+    filteredRowsWithoutDuplicates.filter(
+      (r) => r.object === objectType && r.type === "userdefined"
+    ).length;
   const getObjectTotal = (objectType: ObjectKey) =>
-    getDefaultCount(objectType) + getCustomCount(objectType) + getUserDefinedCount(objectType);
+    getDefaultCount(objectType) +
+    getCustomCount(objectType) +
+    getUserDefinedCount(objectType);
 
   return (
     <div className="mt-4 p-4 bg-gray-50 rounded-lg">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">Summary</h3>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-4">
         <div>
-          <span className="font-medium">Total Properties:</span> {getTotalCount()}
+          <span className="font-medium">Total Properties:</span>{" "}
+          {getTotalCount()}
         </div>
         <div>
           <span className="font-medium">Default:</span> {getTotalDefaultCount()}
@@ -620,19 +707,24 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           <span className="font-medium">Custom:</span> {getTotalCustomCount()}
         </div>
         <div>
-          <span className="font-medium">userdefined:</span> {getTotalUserDefinedCount()}
+          <span className="font-medium">userdefined:</span>{" "}
+          {getTotalUserDefinedCount()}
         </div>
       </div>
 
       <div className="border-t pt-3">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Breakdown by Object Type</h4>
+        <h4 className="text-sm font-semibold text-gray-700 mb-3">
+          Breakdown by Object Type
+        </h4>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {Array.from(selectedObjects)
             .sort((a, b) => {
-              const order = { contacts: 0, companies: 1, deals: 2, tickets: 3 } as Record<
-                ObjectKey,
-                number
-              >;
+              const order = {
+                contacts: 0,
+                companies: 1,
+                deals: 2,
+                tickets: 3,
+              } as Record<ObjectKey, number>;
               return order[a] - order[b];
             })
             .map((objectType) => {
@@ -642,7 +734,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               const totalProps = getObjectTotal(objectType);
               return (
                 <div key={objectType} className="bg-white p-3 rounded border">
-                  <div className="font-medium text-gray-80 capitalize mb-2">{objectType}</div>
+                  <div className="font-medium text-gray-80 capitalize mb-2">
+                    {objectType}
+                  </div>
                   <div className="space-y-1 text-xs text-gray-600">
                     <div className="flex justify-between">
                       <span>Total:</span>
@@ -650,15 +744,21 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     </div>
                     <div className="flex justify-between">
                       <span>Default:</span>
-                      <span className="text-green-600 font-medium">{defaultProps}</span>
+                      <span className="text-green-600 font-medium">
+                        {defaultProps}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span>Custom:</span>
-                      <span className="text-blue-600 font-medium">{customProps}</span>
+                      <span className="text-blue-600 font-medium">
+                        {customProps}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span>userdefined:</span>
-                      <span className="text-purple-600 font-medium">{userDefProps}</span>
+                      <span className="text-purple-600 font-medium">
+                        {userDefProps}
+                      </span>
                     </div>
                   </div>
                 </div>
