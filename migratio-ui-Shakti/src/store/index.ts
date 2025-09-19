@@ -4,7 +4,7 @@ import {
   createAction,
   AnyAction,
 } from '@reduxjs/toolkit';
-
+import customPropertiesReducer from "./customPropertiesSlice";
 import contactsReducer from './slices/contactsSlice';
 import companiesReducer from './slices/companiesSlice';
 import dealsReducer from './slices/dealsSlice';
@@ -17,6 +17,7 @@ const appReducer = combineReducers({
   deals: dealsReducer,
   tickets: ticketsReducer,
   properties: propertiesReducer,
+  customProperties: customPropertiesReducer,
 });
 
 // optional global reset

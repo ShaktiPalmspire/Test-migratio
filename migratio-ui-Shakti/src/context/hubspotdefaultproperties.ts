@@ -2087,7 +2087,8 @@ export const hubspotContactProperties: HubSpotDefaultProperty[] = [
     "label": "Record ID",
     "sr_no": 296,
     "type": "number",
-    "fieldType": "number"
+    "fieldType": "number",
+    "required": true
   },
   {
     "name": "hs_object_source_label",
@@ -3466,7 +3467,8 @@ export const hubspotCompanyProperties: HubSpotDefaultProperty[] = [
     "label": "Record ID",
     "sr_no": 137,
     "type": "number",
-    "fieldType": "number"
+    "fieldType": "number",
+    "required": true
   },
   {
     "name": "hs_object_source_label",
@@ -5013,7 +5015,8 @@ export const hubspotDealProperties: HubSpotDefaultProperty[] = [
     "label": "Record ID",
     "sr_no": 171,
     "type": "number",
-    "fieldType": "number"
+    "fieldType": "number",
+    "required": true
   },
   {
     "name": "hs_object_source_label",
@@ -6203,7 +6206,8 @@ export const hubspotTicketProperties: HubSpotDefaultProperty[] = [
     "label": "Record ID",
     "sr_no": 150,
     "type": "number",
-    "fieldType": "number"
+    "fieldType": "number",
+    "required": true
   },
   {
     "name": "hs_object_source_label",

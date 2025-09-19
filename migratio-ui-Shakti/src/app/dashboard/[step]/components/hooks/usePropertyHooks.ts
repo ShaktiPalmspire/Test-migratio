@@ -306,6 +306,9 @@
 //     setPropPool,
 //   };
 // };
+import { useDispatch } from "react-redux";
+// NOTE: adjust the relative path to your store slice:
+import { setCustomProperties } from "./../../../../../store/customPropertiesSlice";
 
 import { useState, useEffect, useRef } from "react";
 import {
@@ -356,59 +359,50 @@ export const useCustomProperties = (selectedObjects: Set<ObjectKey>) => {
       console.warn("⚠️ [CUSTOM_PROPERTIES] Error persisting session data:", error);
     }
   };
+  const dispatch = useDispatch();
 
-  // Fetch properties for one object
-  const fetchCustomProperties = async (objectType: ObjectKey) => {
-    try {
-      // ✅ Already fetched in this session
-      if (
-        fetchedInSessionRef.current.has(objectType) &&
-        (customProperties[objectType]?.length ?? 0) > 0
-      ) {
-        return customProperties[objectType];
-      }
+// fetch custom properties for a single object from the correct endpoint
+const fetchCustomProperties = async (
+  obj: "contacts" | "companies" | "deals" | "tickets"
+) => {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
 
-      // ✅ LocalStorage cache
-      const cacheKey = `customProperties_${objectType}`;
-      const cachedRaw =
-        typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
-      if (cachedRaw) {
-        try {
-          const cached = JSON.parse(cachedRaw) as PropertyItem[];
-          setCustomProperties((prev) => ({
-            ...prev,
-            [objectType]: cached,
-          }));
-          fetchedInSessionRef.current.add(objectType);
-          persistFetchedSession();
-          return cached;
-        } catch {
-          console.warn("⚠️ [CUSTOM_PROPERTIES] Invalid cache for", objectType);
-        }
-      }
+  // hit /schema/:object instead of /properties (which was 404)
+  let res = await fetch(
+    `/api/hubspot/schema/${obj}?kind=properties&instance=a`,
+    { headers }
+  );
 
-      // ✅ API call as fallback
-      setIsLoadingCustom(true);
-      const res = await fetch(`/api/hubspot/properties?object=${objectType}`);
-      if (!res.ok) throw new Error("Failed to fetch properties");
-      const data: PropertyItem[] = await res.json();
+  // fallback: some servers omit ?kind
+  if (res.status === 404) {
+    res = await fetch(`/api/hubspot/schema/${obj}?instance=a`, { headers });
+  }
 
-      setCustomProperties((prev) => ({
-        ...prev,
-        [objectType]: data,
-      }));
-      localStorage.setItem(cacheKey, JSON.stringify(data));
-      fetchedInSessionRef.current.add(objectType);
-      persistFetchedSession();
+  if (!res.ok) {
+    throw new Error(`[CUSTOM_PROPERTIES] ${obj} → ${res.status}`);
+  }
 
-      return data;
-    } catch (error) {
-      console.error("❌ [CUSTOM_PROPERTIES] Fetch failed for", objectType, error);
-      return [];
-    } finally {
-      setIsLoadingCustom(false);
-    }
-  };
+  const raw = await res.json();
+  const list: any[] = Array.isArray(raw?.results)
+    ? raw.results
+    : Array.isArray(raw)
+    ? raw
+    : [];
+
+  const mapped = list
+    .filter((p: any) => p && p.name)
+    .map((p: any) => ({
+      name: p.name,
+      label: p.label ?? p.name,
+      type: p.type ?? p.dataType ?? "string",
+      fieldType: p.fieldType ?? p.formField ?? "text",
+    }))
+    .sort((a: any, b: any) => String(a.label).localeCompare(String(b.label)));
+
+  // reducer expects a keyed shape; cast keeps TS quiet without changing reducer
+  dispatch(setCustomProperties({ [obj]: mapped } as any));
+};
+
 
   // ✅ Fetch only missing objects → prevents tab switch API calls
   useEffect(() => {
@@ -426,7 +420,7 @@ export const useCustomProperties = (selectedObjects: Set<ObjectKey>) => {
   // Manual refresh
   const fetchAllCustomProperties = async () => {
     for (const obj of Array.from(selectedObjects)) {
-      await fetchCustomProperties(obj);
+      await fetchCustomProperties(obj as any);      // ✅ one argument
     }
   };
 

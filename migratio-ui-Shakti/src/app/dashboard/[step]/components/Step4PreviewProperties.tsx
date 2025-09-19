@@ -102,7 +102,7 @@ export function Step4PreviewProperties({
     setHasUnsavedChanges,
     onStepChange
   );
-
+  const [isRefreshing, setIsRefreshing] = useState(false);
   // Search functionality
   const [searchQuery, setSearchQuery] = useState<string>("");
   const filteredRows = useMemo(() => {
@@ -128,7 +128,17 @@ export function Step4PreviewProperties({
       tickets: createMap(hubspotTicketProperties),
     };
   }, []);
-
+  const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 30 30"
+      width="20"
+      height="20"
+      className={className}
+    >
+      <path d="M 15 3 C 12.031398 3 9.3028202 4.0834384 7.2070312 5.875 A 1.0001 1.0001 0 1 0 8.5058594 7.3945312 C 10.25407 5.9000929 12.516602 5 15 5 C 20.19656 5 24.450989 8.9379267 24.951172 14 L 22 14 L 26 20 L 30 14 L 26.949219 14 C 26.437925 7.8516588 21.277839 3 15 3 z M 4 10 L 0 16 L 3.0507812 16 C 3.562075 22.148341 8.7221607 27 15 27 C 17.968602 27 20.69718 25.916562 22.792969 24.125 A 1.0001 1.0001 0 1 0 21.494141 22.605469 C 19.74593 24.099907 17.483398 25 15 25 C 9.80344 25 5.5490109 21.062074 5.0488281 16 L 8 16 L 4 10 z" />
+    </svg>
+  );
   // Default property mappings
   const defaultMapModal: Record<ObjectKey, PropertyItem[]> = useMemo(
     () => ({
@@ -373,14 +383,6 @@ export function Step4PreviewProperties({
 
   // Load mappings on mount
   useEffect(() => {
-    // Clear all caches to ensure fresh data
-    selectedObjects.forEach((obj) => {
-      const customCacheKey = `customProperties_${obj}`;
-      const udCacheKey = `userDefinedProps:${obj}`;
-      localStorage.removeItem(customCacheKey);
-      localStorage.removeItem(udCacheKey);
-    });
-
     loadMappings();
   }, [selectedObjects]);
 
@@ -431,13 +433,22 @@ export function Step4PreviewProperties({
   );
 
   useEffect(() => {
-    const missingObjects = Array.from(selectedObjects).filter(
+    // fetch sirf un objects ke liye jinhe is session me abhi tak load nahi kiya
+    const fetchedKey = "fetchedInSessionObjects";
+    const fetched = JSON.parse(sessionStorage.getItem(fetchedKey) || "[]");
+
+    const need = Array.from(selectedObjects).filter(
       (obj) =>
-        !reduxCustomProperties[obj] || reduxCustomProperties[obj].length === 0
+        (!reduxCustomProperties[obj] ||
+          reduxCustomProperties[obj].length === 0) &&
+        !fetched.includes(obj)
     );
 
-    if (missingObjects.length > 0) {
-      fetchAllCustomProperties();
+    if (need.length > 0) {
+      Promise.resolve(fetchAllCustomProperties()).finally(() => {
+        const newSet = Array.from(new Set([...fetched, ...need]));
+        sessionStorage.setItem(fetchedKey, JSON.stringify(newSet));
+      });
     }
   }, [selectedObjects, reduxCustomProperties]);
 
@@ -582,27 +593,15 @@ export function Step4PreviewProperties({
 
   const clearAllCaches = useCallback(() => {
     selectedObjects.forEach((obj) => {
-      // const customCacheKey = `customProperties_${obj}`;
-      // const udCacheKey = `userDefinedProps:${obj}`;
       const schemaCacheKey = `schema:${obj}:labels:`;
       const fetchedCacheKey = `fetchedInSessionObjects`;
 
-      // Clear localStorage
-      // localStorage.removeItem(customCacheKey);
-      // localStorage.removeItem(udCacheKey);
-
-      // Clear sessionStorage
-      // sessionStorage.removeItem(customCacheKey);
-      // sessionStorage.removeItem(udCacheKey);
-
-      // Clear all schema-related caches
       Object.keys(localStorage).forEach((key) => {
         if (key.startsWith(schemaCacheKey)) {
           localStorage.removeItem(key);
         }
       });
 
-      // Clear fetched objects cache
       sessionStorage.removeItem(fetchedCacheKey);
     });
   }, [selectedObjects]);
@@ -613,95 +612,116 @@ export function Step4PreviewProperties({
         <h2 className="text-2xl font-bold">
           Step 4: Preview & Configure Properties
         </h2>
-<div className="flex gap-2 flex-wrap">
-  {/* ✅ Refresh button visible for everyone */}
-  <Button
-    variant="secondary"
-    onClick={() => {
-      clearAllCaches();
-      fetchAllCustomProperties();
-    }}
-  >
-    Refresh Custom Data
-  </Button>
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* ✅ Refresh button visible for everyone */}
+          <button
+            type="button"
+            aria-label="Refresh custom data"
+            title="Refresh custom data"
+            onClick={async () => {
+              try {
+                setIsRefreshing(true);
+                clearAllCaches();
+                await fetchAllCustomProperties(); // re-fetch
+                await loadMappings(); // reload mappings
+              } finally {
+                // thoda smooth feel: stop spin after short delay
+                setTimeout(() => setIsRefreshing(false), 300);
+              }
+            }}
+            className={`inline-flex items-center justify-center h-10 w-10 rounded-full
+              border border-green-400 text-green-700
+              hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-green-500
+              ${isRefreshing ? "animate-spin" : ""}`}
+          >
+            <RefreshIcon />
+          </button>
 
-  {/* ✅ Debug button only for admins */}
-  {isAdmin && (
-    <Button
-      variant="secondary"
-      onClick={() => {
-        clearAllCaches();
-        loadMappings();
-      }}
-      disabled={isSaving}
-    >
-      Debug & Reload
-    </Button>
-  )}
+          {/* ✅ Debug button only for admins */}
+          {isAdmin && (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                clearAllCaches();
+                loadMappings();
+              }}
+              disabled={isSaving}
+            >
+              Debug & Reload
+            </Button>
+          )}
 
-  <Button
-    variant="secondary"
-    onClick={() => onStepChange(3)}
-    disabled={isSaving}
-  >
-    Back
-  </Button>
-  <Button
-    onClick={handleSaveAndProceed}
-    disabled={!canProceed || isSaving}
-  >
-    {isSaving ? "Saving..." : "Save & Continue"}
-  </Button>
-</div>
-
-
-
+          <Button
+            variant="secondary"
+            onClick={() => onStepChange(3)}
+            disabled={isSaving}
+          >
+            Back
+          </Button>
+          <Button
+            onClick={handleSaveAndProceed}
+            disabled={!canProceed || isSaving}
+          >
+            {isSaving ? "Saving..." : "Save & Continue"}
+          </Button>
+        </div>
       </div>
 
       <SearchBar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
-
-      <PropertyTable
-        rows={rows}
-        filteredRows={filteredRows}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        editingRow={editingRow}
-        editForm={editForm}
-        onStartEditing={startEditing}
-        onCancelEditing={cancelEditing}
-        onSaveEditing={saveEditing}
-        onEditChange={handleEditChange}
-        onDeleteUserDefined={deleteUserDefined}
-        onReverseCustomProperty={reverseCustomProperty}
-        selectedObjects={selectedObjects}
-        onAddProperty={() => setIsAddOpen(true)}
-        onRowUpdate={(index, updatedRow) => {
-          const updatedRows = [...rows];
-          updatedRows[index] = updatedRow;
-          setRows(updatedRows);
-          setHasUnsavedChanges(true);
-        }}
-        setRows={setRows}
-        setHasUnsavedChanges={setHasUnsavedChanges}
-        setPendingJson={setPendingJson}
-        propPool={propPool as Record<ObjectKey, PropertyItem[]>}
-        defaultMapModal={defaultMapModal}
-      />
-
-      <SummarySection
-        filteredRows={rows}
-        selectedObjects={selectedObjects}
-        canProceed={canProceed}
-        hasUnsavedChanges={hasUnsavedChanges}
-        onStepChange={onStepChange}
-        defaultProperties={{
-          contacts: hubspotContactProperties,
-          companies: hubspotCompanyProperties,
-          deals: hubspotDealProperties,
-          tickets: hubspotTicketProperties,
-        }}
-      />
-
+      {isLoadingCustom ||
+      Array.from(selectedObjects).some((o) => !loadedLists[o]) ? (
+        <div className="grid gap-4">
+          <div className="h-8 w-56 animate-pulse rounded bg-gray-200" />
+          <div className="h-40 animate-pulse rounded bg-gray-200" />
+          <div className="h-40 animate-pulse rounded bg-gray-200" />
+        </div>
+      ) : (
+        <PropertyTable
+          rows={rows}
+          filteredRows={filteredRows}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          editingRow={editingRow}
+          editForm={editForm}
+          onStartEditing={startEditing}
+          onCancelEditing={cancelEditing}
+          onSaveEditing={saveEditing}
+          onEditChange={handleEditChange}
+          onDeleteUserDefined={deleteUserDefined}
+          onReverseCustomProperty={reverseCustomProperty}
+          selectedObjects={selectedObjects}
+          onAddProperty={() => setIsAddOpen(true)}
+          onRowUpdate={(index, updatedRow) => {
+            const updatedRows = [...rows];
+            updatedRows[index] = updatedRow;
+            setRows(updatedRows);
+            setHasUnsavedChanges(true);
+          }}
+          setRows={setRows}
+          setHasUnsavedChanges={setHasUnsavedChanges}
+          setPendingJson={setPendingJson}
+          propPool={propPool as Record<ObjectKey, PropertyItem[]>}
+          defaultMapModal={defaultMapModal}
+        />
+      )}
+      {isLoadingCustom ||
+      Array.from(selectedObjects).some((o) => !loadedLists[o]) ? (
+        <div className="h-24 animate-pulse rounded bg-gray-200" />
+      ) : (
+        <SummarySection
+          filteredRows={rows}
+          selectedObjects={selectedObjects}
+          canProceed={canProceed}
+          hasUnsavedChanges={hasUnsavedChanges}
+          onStepChange={onStepChange}
+          defaultProperties={{
+            contacts: hubspotContactProperties,
+            companies: hubspotCompanyProperties,
+            deals: hubspotDealProperties,
+            tickets: hubspotTicketProperties,
+          }}
+        />
+      )}
       <AddPropertyModal
         isOpen={isAddOpen}
         onClose={() => {
