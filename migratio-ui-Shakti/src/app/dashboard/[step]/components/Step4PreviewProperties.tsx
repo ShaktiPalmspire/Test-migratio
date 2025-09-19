@@ -13,7 +13,9 @@ import {
   hubspotTicketProperties,
 } from "@/context/hubspotdefaultproperties";
 import { ensureValidToken } from "@/utils/cacheUtils";
-
+import { useSelector, useDispatch } from "react-redux";
+import { RootState } from "@/store"; // adjust path
+import { setCustomProperties } from "@/store/slices/propertiesSlice";
 // Import modular components and utilities
 import {
   ObjectKey,
@@ -320,9 +322,6 @@ export function Step4PreviewProperties({
   const [selectedTargetName, setSelectedTargetName] = useState<string>("");
   const [isAtBottom, setIsAtBottom] = useState(false);
 
-  // Debug addObject state
-  useEffect(() => {}, [selectedObjects, addObject]);
-
   // Update addObject when selectedObjects changes (only if addObject is not in selectedObjects AND modal is not open)
   useEffect(() => {
     if (selectedObjects.size > 0 && !isAddOpen) {
@@ -427,14 +426,20 @@ export function Step4PreviewProperties({
     }
   }, [profile]);
 
-  // Load custom properties
+  const reduxCustomProperties = useSelector(
+    (state: RootState) => state.properties.customProperties
+  );
+
   useEffect(() => {
-    console.log(
-      "🔄 [STEP4] fetchAllCustomProperties called for selectedObjects:",
-      Array.from(selectedObjects)
+    const missingObjects = Array.from(selectedObjects).filter(
+      (obj) =>
+        !reduxCustomProperties[obj] || reduxCustomProperties[obj].length === 0
     );
-    fetchAllCustomProperties();
-  }, [selectedObjects]);
+
+    if (missingObjects.length > 0) {
+      fetchAllCustomProperties();
+    }
+  }, [selectedObjects, reduxCustomProperties]);
 
   // Integrate custom properties into rows
   useEffect(() => {
@@ -577,18 +582,18 @@ export function Step4PreviewProperties({
 
   const clearAllCaches = useCallback(() => {
     selectedObjects.forEach((obj) => {
-      const customCacheKey = `customProperties_${obj}`;
-      const udCacheKey = `userDefinedProps:${obj}`;
+      // const customCacheKey = `customProperties_${obj}`;
+      // const udCacheKey = `userDefinedProps:${obj}`;
       const schemaCacheKey = `schema:${obj}:labels:`;
       const fetchedCacheKey = `fetchedInSessionObjects`;
 
       // Clear localStorage
-      localStorage.removeItem(customCacheKey);
-      localStorage.removeItem(udCacheKey);
+      // localStorage.removeItem(customCacheKey);
+      // localStorage.removeItem(udCacheKey);
 
       // Clear sessionStorage
-      sessionStorage.removeItem(customCacheKey);
-      sessionStorage.removeItem(udCacheKey);
+      // sessionStorage.removeItem(customCacheKey);
+      // sessionStorage.removeItem(udCacheKey);
 
       // Clear all schema-related caches
       Object.keys(localStorage).forEach((key) => {
@@ -608,48 +613,49 @@ export function Step4PreviewProperties({
         <h2 className="text-2xl font-bold">
           Step 4: Preview & Configure Properties
         </h2>
-        <div className="flex gap-2">
-          {isAdmin && (
-            <>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  // Clear all caches
-                  clearAllCaches();
-                  // Reload mappings
-                  loadMappings();
-                }}
-                disabled={isSaving}
-              >
-                Refresh
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  // Force reload from database
-                  clearAllCaches();
-                  loadMappings();
-                }}
-                disabled={isSaving}
-              >
-                Debug & Reload
-              </Button>
-            </>
-          )}
-          <Button
-            variant="secondary"
-            onClick={() => onStepChange(3)}
-            disabled={isSaving}
-          >
-            Back
-          </Button>
-          <Button
-            onClick={handleSaveAndProceed}
-            disabled={!canProceed || isSaving}
-          >
-            {isSaving ? "Saving..." : "Save & Continue"}
-          </Button>
-        </div>
+<div className="flex gap-2 flex-wrap">
+  {/* ✅ Refresh button visible for everyone */}
+  <Button
+    variant="secondary"
+    onClick={() => {
+      clearAllCaches();
+      fetchAllCustomProperties();
+    }}
+  >
+    Refresh Custom Data
+  </Button>
+
+  {/* ✅ Debug button only for admins */}
+  {isAdmin && (
+    <Button
+      variant="secondary"
+      onClick={() => {
+        clearAllCaches();
+        loadMappings();
+      }}
+      disabled={isSaving}
+    >
+      Debug & Reload
+    </Button>
+  )}
+
+  <Button
+    variant="secondary"
+    onClick={() => onStepChange(3)}
+    disabled={isSaving}
+  >
+    Back
+  </Button>
+  <Button
+    onClick={handleSaveAndProceed}
+    disabled={!canProceed || isSaving}
+  >
+    {isSaving ? "Saving..." : "Save & Continue"}
+  </Button>
+</div>
+
+
+
       </div>
 
       <SearchBar searchQuery={searchQuery} onSearchChange={setSearchQuery} />

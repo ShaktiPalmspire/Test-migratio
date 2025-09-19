@@ -9,12 +9,14 @@ import contactsReducer from './slices/contactsSlice';
 import companiesReducer from './slices/companiesSlice';
 import dealsReducer from './slices/dealsSlice';
 import ticketsReducer from './slices/ticketsSlice';
+import propertiesReducer from './slices/propertiesSlice';
 
 const appReducer = combineReducers({
   contacts: contactsReducer,
   companies: companiesReducer,
   deals: dealsReducer,
   tickets: ticketsReducer,
+  properties: propertiesReducer,
 });
 
 // optional global reset
