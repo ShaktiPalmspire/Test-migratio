@@ -306,24 +306,13 @@
 //     setPropPool,
 //   };
 // };
-import { useDispatch } from "react-redux";
-// NOTE: adjust the relative path to your store slice:
-import { setCustomProperties } from "./../../../../../store/customPropertiesSlice";
+import { useState, useEffect, useRef } from 'react';
+import { ObjectKey, CustomPropertiesState, PropPoolState, LoadedListsState, PropertyItem } from '../types/propertyTypes';
+import { useUser } from '@/context/UserContext';
 
-import { useState, useEffect, useRef } from "react";
-import {
-  ObjectKey,
-  CustomPropertiesState,
-  PropPoolState,
-  LoadedListsState,
-  PropertyItem,
-} from "../types/propertyTypes";
-import { useUser } from "@/context/UserContext";
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-/* ===========================
-   Custom Properties Hook
-   =========================== */
-
+// ✅ NEW: active custom-properties hook (safe + cached + minimal logs)
 export const useCustomProperties = (selectedObjects: Set<ObjectKey>) => {
   const [customProperties, setCustomProperties] = useState<CustomPropertiesState>({
     contacts: [],
@@ -332,153 +321,139 @@ export const useCustomProperties = (selectedObjects: Set<ObjectKey>) => {
     tickets: [],
   });
   const [isLoadingCustom, setIsLoadingCustom] = useState(false);
-
-  // Track which objects we already fetched in this session
   const fetchedInSessionRef = useRef<Set<ObjectKey>>(new Set());
+  const { user, profile } = useUser();
 
-  // Restore from sessionStorage
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("fetchedInSessionObjects");
-      if (raw) {
-        const arr: ObjectKey[] = JSON.parse(raw);
-        fetchedInSessionRef.current = new Set(arr);
-      }
-    } catch (error) {
-      console.warn("⚠️ [CUSTOM_PROPERTIES] Error restoring session data:", error);
-    }
+      if (raw) fetchedInSessionRef.current = new Set(JSON.parse(raw));
+    } catch {}
   }, []);
-
   const persistFetchedSession = () => {
     try {
-      sessionStorage.setItem(
-        "fetchedInSessionObjects",
-        JSON.stringify(Array.from(fetchedInSessionRef.current))
-      );
-    } catch (error) {
-      console.warn("⚠️ [CUSTOM_PROPERTIES] Error persisting session data:", error);
-    }
+      sessionStorage.setItem("fetchedInSessionObjects", JSON.stringify(Array.from(fetchedInSessionRef.current)));
+    } catch {}
   };
-  const dispatch = useDispatch();
 
-// fetch custom properties for a single object from the correct endpoint
-const fetchCustomProperties = async (
-  obj: "contacts" | "companies" | "deals" | "tickets"
-) => {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+ const fetchCustomProperties = async (objectType: ObjectKey): Promise<PropertyItem[]> => {
+  try {
+    // cache (localStorage) — आपका existing CACHE_TTL_MS remain
+    const cacheKey = `customProperties_${objectType}`;
+    const cachedRaw = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
+    if (cachedRaw) {
+      try {
+        const cached = JSON.parse(cachedRaw);
+        const fresh = Array.isArray(cached?.data) && typeof cached?.timestamp === "number" && (Date.now() - cached.timestamp) < CACHE_TTL_MS;
+        if (fresh) {
+          const payload = cached.data as PropertyItem[];
+          setCustomProperties(prev => ({ ...prev, [objectType]: payload }));
+          return payload;
+        }
+      } catch { localStorage.removeItem(cacheKey); }
+    }
 
-  // hit /schema/:object instead of /properties (which was 404)
-  let res = await fetch(
-    `/api/hubspot/schema/${obj}?kind=properties&instance=a`,
-    { headers }
-  );
+    // token guards
+    if (!user?.id || !profile?.hubspot_access_token_a) return [];
 
-  // fallback: some servers omit ?kind
-  if (res.status === 404) {
-    res = await fetch(`/api/hubspot/schema/${obj}?instance=a`, { headers });
+    // call proxy → backend (propertyType=custom)
+    const url = `/api/hubspot/schema/${objectType}?propertyType=custom&instance=a`;
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${profile.hubspot_access_token_a}`,
+        "X-User-ID": user.id,
+        "X-Portal-ID": String(profile.hubspot_portal_id_a || ""),
+      },
+      cache: "no-store",
+    });
+
+    if (!resp.ok) {
+      // minimal logs policy → fail safe
+      setCustomProperties(prev => ({ ...prev, [objectType]: [] }));
+      return [];
+    }
+
+    const data = await resp.json();
+    // ✅ backend अब हमेशा .results देता है
+    const list: any[] = Array.isArray(data?.results) ? data.results : [];
+
+    // map to PropertyItem
+    const payload: PropertyItem[] = list.map((p: any) => ({
+      name: p?.name,
+      label: p?.label || p?.name,
+      description: p?.description || "",
+      type: p?.type,
+      fieldType: p?.fieldType,
+      object: objectType,
+      source: "custom",
+    })).filter(x => !!x.name);
+
+    setCustomProperties(prev => ({ ...prev, [objectType]: payload }));
+    try { localStorage.setItem(cacheKey, JSON.stringify({ data: payload, timestamp: Date.now() })); } catch {}
+
+    return payload;
+  } catch {
+    setCustomProperties(prev => ({ ...prev, [objectType]: [] }));
+    return [];
   }
-
-  if (!res.ok) {
-    throw new Error(`[CUSTOM_PROPERTIES] ${obj} → ${res.status}`);
-  }
-
-  const raw = await res.json();
-  const list: any[] = Array.isArray(raw?.results)
-    ? raw.results
-    : Array.isArray(raw)
-    ? raw
-    : [];
-
-  const mapped = list
-    .filter((p: any) => p && p.name)
-    .map((p: any) => ({
-      name: p.name,
-      label: p.label ?? p.name,
-      type: p.type ?? p.dataType ?? "string",
-      fieldType: p.fieldType ?? p.formField ?? "text",
-    }))
-    .sort((a: any, b: any) => String(a.label).localeCompare(String(b.label)));
-
-  // reducer expects a keyed shape; cast keeps TS quiet without changing reducer
-  dispatch(setCustomProperties({ [obj]: mapped } as any));
 };
 
 
-  // ✅ Fetch only missing objects → prevents tab switch API calls
-  useEffect(() => {
-    const missingObjects = Array.from(selectedObjects).filter(
-      (obj) => !customProperties[obj] || customProperties[obj].length === 0
-    );
-
-    if (missingObjects.length > 0) {
-      missingObjects.forEach((obj) => {
-        fetchCustomProperties(obj);
-      });
-    }
-  }, [selectedObjects]);
-
-  // Manual refresh
   const fetchAllCustomProperties = async () => {
-    for (const obj of Array.from(selectedObjects)) {
-      await fetchCustomProperties(obj as any);      // ✅ one argument
+    if (selectedObjects.size === 0) return;
+    setIsLoadingCustom(true);
+    try {
+      const nextState: CustomPropertiesState = { contacts: [], companies: [], deals: [], tickets: [] };
+      await Promise.all(Array.from(selectedObjects).map(async (obj) => {
+        nextState[obj] = await fetchCustomProperties(obj);
+      }));
+      setCustomProperties(nextState);
+    } finally {
+      setIsLoadingCustom(false);
     }
   };
 
+  // expose public API
   return {
     customProperties,
     isLoadingCustom,
+    fetchCustomProperties,
     fetchAllCustomProperties,
+    clearCustomCache: () => {
+      try {
+        ['contacts','companies','deals','tickets'].forEach(k => localStorage.removeItem(`customProperties_${k}`));
+        sessionStorage.removeItem('fetchedInSessionObjects');
+      } catch {}
+      fetchedInSessionRef.current = new Set();
+      setCustomProperties({ contacts: [], companies: [], deals: [], tickets: [] });
+    }
   };
 };
 
-/* ===========================
-   Property Pool Hook
-   =========================== */
-
+// (existing) property pool hook below stays as-is
 export const usePropertyPool = () => {
   const [propPool, setPropPool] = useState<PropPoolState>({
-  contacts: [],
-  companies: [],
-  deals: [],
-  tickets: [],
-});
+    contacts: [],
+    companies: [],
+    deals: [],
+    tickets: [],
+  });
+  const [loadedLists, setLoadedLists] = useState<LoadedListsState>({
+    contacts: false,
+    companies: false,
+    deals: false,
+    tickets: false,
+  });
 
-const [loadedLists, setLoadedLists] = useState<LoadedListsState>({
-  contacts: false,
-  companies: false,
-  deals: false,
-  tickets: false,
-});
-
-
-  const loadProps = (
-    objectType: ObjectKey,
-    defaultMapModal: Record<ObjectKey, PropertyItem[]>,
-    defaultMetaByName: Record<
-      ObjectKey,
-      Record<string, { type?: string; fieldType?: string }>
-    >
-  ) => {
-    if (loadedLists[objectType]) return;
-
-    // Default properties for this object
-    const defaults = defaultMapModal[objectType] || [];
-
-    // Extend with meta
-    const enriched = defaults.map((p) => ({
+  const loadProps = async (objectType: ObjectKey, list: PropertyItem[], defaultMetaByName: Record<ObjectKey, Record<string, any>>) => {
+    const enriched = (list || []).map((p) => ({
       ...p,
       type: defaultMetaByName[objectType][p.name]?.type || p.type,
       fieldType: defaultMetaByName[objectType][p.name]?.fieldType || p.fieldType,
     }));
 
-    setPropPool((prev) => ({
-      ...prev,
-      [objectType]: enriched,
-    }));
-    setLoadedLists((prev) => ({
-      ...prev,
-      [objectType]: true,
-    }));
+    setPropPool((prev) => ({ ...prev, [objectType]: enriched }));
+    setLoadedLists((prev) => ({ ...prev, [objectType]: true }));
   };
 
   return { propPool, loadedLists, loadProps, setPropPool };

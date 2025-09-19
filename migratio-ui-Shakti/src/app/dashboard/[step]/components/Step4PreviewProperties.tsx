@@ -34,7 +34,8 @@ import {
   norm,
   getTotalPropertiesCount,
 } from "./utils/propertyUtils";
-import { useCustomProperties, usePropertyPool } from "./hooks/usePropertyHooks";
+import { useCustomProperties } from "./hooks/usePropertyHooks";
+import { usePropertyPool } from "./hooks/usePropertyPool";
 import {
   PropertyTable,
   SearchBar,
@@ -76,6 +77,14 @@ export function Step4PreviewProperties({
     setHasUnsavedChanges,
     loadMappings,
   } = usePropertyMappings(selectedObjects, profile);
+  const normalizePool = (
+    pool: Record<ObjectKey, PropertyItem[] | null>
+  ): Record<ObjectKey, PropertyItem[]> => ({
+    contacts: pool.contacts ?? [],
+    companies: pool.companies ?? [],
+    deals: pool.deals ?? [],
+    tickets: pool.tickets ?? [],
+  });
 
   // Property editing logic
   const {
@@ -746,7 +755,7 @@ export function Step4PreviewProperties({
           loadProps(obj, defaultMapModal, defaultMetaByName)
         }
         selectedObjects={selectedObjects}
-        setPropPool={setPropPool}
+        setPropPool={(pool) => setPropPool(normalizePool(pool))}
       />
 
       {hasUnsavedChanges && (
