@@ -1,318 +1,10 @@
-// import { useState, useEffect, useRef } from 'react';
-// import { ObjectKey, CustomPropertiesState, PropPoolState, LoadedListsState } from '../types/propertyTypes';
-// import { useUser } from '@/context/UserContext';
-// import { PropertyItem } from '../types/propertyTypes';
-
-// const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
-
-// export const useCustomProperties = (selectedObjects: Set<ObjectKey>) => {
-//   const [customProperties, setCustomProperties] = useState<CustomPropertiesState>({
-//     contacts: [],
-//     companies: [],
-//     deals: [],
-//     tickets: [],
-//   });
-//   const [isLoadingCustom, setIsLoadingCustom] = useState(false);
-//   const fetchedInSessionRef = useRef<Set<ObjectKey>>(new Set());
-//   const { user, profile, refreshProfile } = useUser();
-
-//   // Restore session-fetched set across remounts
-//   useEffect(() => {
-//     try {
-//       const raw = sessionStorage.getItem("fetchedInSessionObjects");
-//       if (raw) {
-//         const arr: ObjectKey[] = JSON.parse(raw);
-//         fetchedInSessionRef.current = new Set(arr);
-//       }
-//     } catch (error) {
-//       console.warn('⚠️ [CUSTOM_PROPERTIES] Error restoring session data:', error);
-//     }
-//   }, []);
-
-//   const persistFetchedSession = () => {
-//     try {
-//       sessionStorage.setItem(
-//         "fetchedInSessionObjects",
-//         JSON.stringify(Array.from(fetchedInSessionRef.current))
-//       );
-//     } catch (error) {
-//       console.warn('⚠️ [CUSTOM_PROPERTIES] Error persisting session data:', error);
-//     }
-//   };
-
-//   const fetchCustomProperties = async (objectType: ObjectKey) => {
-//     try {
-      
-//       // Check if already fetched in this session
-//       if (fetchedInSessionRef.current.has(objectType) && (customProperties[objectType]?.length ?? 0) > 0) {
-//         return customProperties[objectType];
-//       }
-      
-//       // Check localStorage cache
-//       const cacheKey = `customProperties_${objectType}`;
-//       const cachedRaw = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
-//       if (cachedRaw) {
-//         try {
-//           const cached = JSON.parse(cachedRaw);
-//           if (Array.isArray(cached?.data) && typeof cached?.timestamp === "number") {
-//             const isFresh = Date.now() - cached.timestamp < CACHE_TTL_MS;
-//             if (isFresh) {
-//               fetchedInSessionRef.current.add(objectType);
-//               persistFetchedSession();
-//               setCustomProperties(prev => ({ ...prev, [objectType]: cached.data }));
-//               return cached.data;
-//             }
-//           }
-//         } catch (error) {
-//           console.warn('⚠️ [FETCH_CUSTOM] Error parsing cached data:', error);
-//           localStorage.removeItem(cacheKey);
-//         }
-//       }
-      
-//       // Validate user and profile
-//       if (!user?.id || !profile) {
-//         return [];
-//       }
-      
-//       // Check if token is expired and refresh if needed
-//       const isExpired = profile.hubspot_access_token_expires_at_a && 
-//         new Date(profile.hubspot_access_token_expires_at_a) <= new Date();
-      
-//       if (isExpired) {
-//         console.log('🔄 [FETCH_CUSTOM] Token expired, refreshing...');
-//         try {
-//           const backendBase = (process.env.NEXT_PUBLIC_DOMAIN_BACKEND || "http://localhost:3000/").replace(/\/?$/, "/");
-//           const res = await fetch(`${backendBase}hubspot/refresh-token`, {
-//             method: 'POST',
-//             headers: { 'Content-Type': 'application/json' },
-//             credentials: 'include',
-//             body: JSON.stringify({
-//               refreshToken: profile.hubspot_refresh_token_a,
-//               userId: user.id,
-//               instance: "a",
-//             }),
-//           });
-
-//           if (!res.ok) {
-//             console.log('❌ [FETCH_CUSTOM] Token refresh failed, skipping fetch');
-//             return [];
-//           }
-
-//           await res.json();
-//           await refreshProfile();
-//           console.log('✅ [FETCH_CUSTOM] Token refreshed successfully');
-//         } catch (error) {
-//           console.warn('⚠️ [FETCH_CUSTOM] Error refreshing token:', error);
-//           return [];
-//         }
-//       }
-      
-//       // Fetch from API
-//       const url = `/api/hubspot/schema/${objectType}?propertyType=custom&userId=${user.id}&instance=a`;
-      
-//       console.log('🔄 [FETCH_CUSTOM] Fetching custom properties for:', objectType);
-//       console.log('🔄 [FETCH_CUSTOM] URL:', url);
-//       console.log('🔄 [FETCH_CUSTOM] User ID:', user.id);
-//       console.log('🔄 [FETCH_CUSTOM] Profile token exists:', !!profile.hubspot_access_token_a);
-      
-//       const response = await fetch(url, {
-//         headers: {
-//           'Authorization': `Bearer ${profile.hubspot_access_token_a}`,
-//           'X-User-ID': user.id,
-//           'X-Portal-ID': String(profile.hubspot_portal_id_a || '')
-//         }
-//       });
-      
-//       console.log('🔄 [FETCH_CUSTOM] Response status:', response.status);
-//       console.log('🔄 [FETCH_CUSTOM] Response ok:', response.ok);
-      
-//       if (!response.ok) {
-//         const errorText = await response.text();
-//         console.error('❌ [FETCH_CUSTOM] Response error:', errorText);
-//         throw new Error(`HTTP ${response.status}: ${errorText}`);
-//       }
-      
-//       const data = await response.json();
-      
-//       console.log('🔄 [FETCH_CUSTOM] Response data:', data);
-//       console.log('🔄 [FETCH_CUSTOM] Data ok:', data.ok);
-//       console.log('🔄 [FETCH_CUSTOM] Data results:', data.data?.results?.length || 0);
-      
-//       // Extract properties from response
-//       const properties = (data.ok && data.data?.results) ? data.data.results :
-//                         data.results ? data.results :
-//                         data.properties ? data.properties : [];
-      
-//       console.log('🔄 [FETCH_CUSTOM] Extracted properties:', properties.length);
-      
-//       // Filter out default properties to ensure only custom properties
-//       const customOnlyProperties = properties.filter((prop: any) => !prop.hubspotDefined);
-      
-//       console.log('🔄 [FETCH_CUSTOM] Custom only properties:', customOnlyProperties.length);
-//       console.log('🔄 [FETCH_CUSTOM] Sample custom property:', customOnlyProperties[0]);
-      
-//       // Cache the result
-//       try {
-//         const payload = { data: customOnlyProperties, timestamp: Date.now() };
-//         localStorage.setItem(cacheKey, JSON.stringify(payload));
-//         setCustomProperties(prev => ({ ...prev, [objectType]: customOnlyProperties }));
-//       } catch (error) {
-//         console.warn('⚠️ [FETCH_CUSTOM] Error caching data:', error);
-//       }
-      
-//       fetchedInSessionRef.current.add(objectType);
-//       persistFetchedSession();
-//       return customOnlyProperties;
-      
-//     } catch (error) {
-//       console.error('❌ [FETCH_CUSTOM] Error fetching custom properties:', error);
-//       return [];
-//     }
-//   };
-
-//   const fetchAllCustomProperties = async () => {
-//     if (selectedObjects.size === 0) return;
-    
-//     setIsLoadingCustom(true);
-//     const customProps: CustomPropertiesState = { contacts: [], companies: [], deals: [], tickets: [] };
-    
-//     try {
-//       await Promise.all(
-//         Array.from(selectedObjects).map(async (objectType) => {
-//           const props = await fetchCustomProperties(objectType);
-//           customProps[objectType] = props;
-//         })
-//       );
-//       setCustomProperties(customProps);
-//     } catch (error) {
-//       console.error('❌ [FETCH_ALL_CUSTOM] Error fetching all custom properties:', error);
-//     } finally {
-//       setIsLoadingCustom(false);
-//     }
-//   };
-
-//   return {
-//     customProperties,
-//     isLoadingCustom,
-//     fetchCustomProperties,
-//     fetchAllCustomProperties,
-//   };
-// };
-
-// export const usePropertyPool = () => {
-//   const [propPool, setPropPool] = useState<PropPoolState>({
-//     contacts: null,
-//     companies: null,
-//     deals: null,
-//     tickets: null,
-//   });
-//   const [loadedLists, setLoadedLists] = useState<LoadedListsState>({
-//     contacts: false,
-//     companies: false,
-//     deals: false,
-//     tickets: false,
-//   });
-//   const { user, profile, refreshProfile } = useUser();
-
-//   const mergeWithDefaults = (obj: ObjectKey, list: PropertyItem[], defaultMetaByName: Record<ObjectKey, Record<string, { type?: string; fieldType?: string }>>) => {
-//     const meta = defaultMetaByName[obj];
-//     return list.map((p) => ({
-//       ...p,
-//       type: p.type ?? meta[p.name]?.type,
-//       fieldType: p.fieldType ?? meta[p.name]?.fieldType,
-//     }));
-//   };
-
-//   const loadProps = async (obj: ObjectKey, defaultMapModal: Record<ObjectKey, PropertyItem[]>, defaultMetaByName: Record<ObjectKey, Record<string, { type?: string; fieldType?: string }>>) => {
-//     if (loadedLists[obj]) {
-//       return;
-//     }
-    
-//     let arr: PropertyItem[] = [];
-    
-//     try {
-//       if (user?.id && profile) {
-//                   // Check if token is expired and refresh if needed
-//                   const isExpired = profile.hubspot_access_token_expires_at_a && 
-//                     new Date(profile.hubspot_access_token_expires_at_a) <= new Date();
-                  
-//                   if (isExpired) {
-//                     console.log('🔄 [LOAD_PROPS] Token expired, refreshing...');
-//                     try {
-//                       const backendBase = (process.env.NEXT_PUBLIC_DOMAIN_BACKEND || "http://localhost:3000/").replace(/\/?$/, "/");
-//                       const res = await fetch(`${backendBase}hubspot/refresh-token`, {
-//                         method: 'POST',
-//                         headers: { 'Content-Type': 'application/json' },
-//                         credentials: 'include',
-//                         body: JSON.stringify({
-//                           refreshToken: profile.hubspot_refresh_token_a,
-//                           userId: user.id,
-//                           instance: "a",
-//                         }),
-//                       });
-
-//                       if (!res.ok) {
-//                         console.log('❌ [LOAD_PROPS] Token refresh failed, skipping load');
-//                         return;
-//                       }
-
-//                       await res.json();
-//                       await refreshProfile();
-//                       console.log('✅ [LOAD_PROPS] Token refreshed successfully');
-//                     } catch (error) {
-//                       console.warn('⚠️ [LOAD_PROPS] Error refreshing token:', error);
-//                       return;
-//                     }
-//                   }
-        
-//         // Fetch from API
-//         const res = await fetch(`/api/hubspot/schema/${obj}?userId=${user.id}&instance=a`);
-        
-//         if (res.ok) {
-//           const data = await res.json();
-//           const list = data?.data?.results || data?.results || data?.properties || [];
-          
-//           arr = (list as any[]).map((p) => ({
-//             name: p.name || p.internalName,
-//             label: p.label || p.name || p.internalName,
-//             type: p.type,
-//             fieldType: p.fieldType,
-//           }));
-          
-//         } else {
-//           console.warn('⚠️ [LOAD_PROPS] API response not ok for:', obj, 'status:', res.status);
-//         }
-//       }
-//     } catch (error) {
-//       console.error('❌ [LOAD_PROPS] Error loading properties for:', obj, error);
-//     }
-    
-//     // Fallback to defaults if no data loaded
-//     if (!arr.length) {
-//       arr = defaultMapModal[obj];
-//     } else {
-//       // Merge with defaults to ensure all properties have type and fieldType
-//       arr = mergeWithDefaults(obj, arr, defaultMetaByName);
-//     }
-    
-//     setPropPool((s) => ({ ...s, [obj]: arr }));
-//     setLoadedLists((s) => ({ ...s, [obj]: true }));
-//   };
-
-//   return {
-//     propPool,
-//     loadedLists,
-//     loadProps,
-//     setPropPool,
-//   };
-// };
 import { useState, useEffect, useRef } from 'react';
-import { ObjectKey, CustomPropertiesState, PropPoolState, LoadedListsState, PropertyItem } from '../types/propertyTypes';
+import { ObjectKey, CustomPropertiesState, PropPoolState, LoadedListsState } from '../types/propertyTypes';
 import { useUser } from '@/context/UserContext';
+import { PropertyItem } from '../types/propertyTypes';
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-// ✅ NEW: active custom-properties hook (safe + cached + minimal logs)
 export const useCustomProperties = (selectedObjects: Set<ObjectKey>) => {
   const [customProperties, setCustomProperties] = useState<CustomPropertiesState>({
     contacts: [],
@@ -322,121 +14,197 @@ export const useCustomProperties = (selectedObjects: Set<ObjectKey>) => {
   });
   const [isLoadingCustom, setIsLoadingCustom] = useState(false);
   const fetchedInSessionRef = useRef<Set<ObjectKey>>(new Set());
-  const { user, profile } = useUser();
+  const { user, profile, refreshProfile } = useUser();
 
+  // Restore session-fetched set across remounts
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("fetchedInSessionObjects");
-      if (raw) fetchedInSessionRef.current = new Set(JSON.parse(raw));
-    } catch {}
+      if (raw) {
+        const arr: ObjectKey[] = JSON.parse(raw);
+        fetchedInSessionRef.current = new Set(arr);
+      }
+    } catch (error) {
+      console.warn('⚠️ [CUSTOM_PROPERTIES] Error restoring session data:', error);
+    }
   }, []);
+
   const persistFetchedSession = () => {
     try {
-      sessionStorage.setItem("fetchedInSessionObjects", JSON.stringify(Array.from(fetchedInSessionRef.current)));
-    } catch {}
+      sessionStorage.setItem(
+        "fetchedInSessionObjects",
+        JSON.stringify(Array.from(fetchedInSessionRef.current))
+      );
+    } catch (error) {
+      console.warn('⚠️ [CUSTOM_PROPERTIES] Error persisting session data:', error);
+    }
   };
 
- const fetchCustomProperties = async (objectType: ObjectKey): Promise<PropertyItem[]> => {
-  try {
-    // cache (localStorage) — आपका existing CACHE_TTL_MS remain
-    const cacheKey = `customProperties_${objectType}`;
-    const cachedRaw = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
-    if (cachedRaw) {
-      try {
-        const cached = JSON.parse(cachedRaw);
-        const fresh = Array.isArray(cached?.data) && typeof cached?.timestamp === "number" && (Date.now() - cached.timestamp) < CACHE_TTL_MS;
-        if (fresh) {
-          const payload = cached.data as PropertyItem[];
-          setCustomProperties(prev => ({ ...prev, [objectType]: payload }));
-          return payload;
+  const fetchCustomProperties = async (objectType: ObjectKey) => {
+    try {
+      
+      // Check if already fetched in this session
+      if (fetchedInSessionRef.current.has(objectType) && (customProperties[objectType]?.length ?? 0) > 0) {
+        return customProperties[objectType];
+      }
+      
+      // Check localStorage cache
+      const cacheKey = `customProperties_${objectType}`;
+      const cachedRaw = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
+      if (cachedRaw) {
+        try {
+          const cached = JSON.parse(cachedRaw);
+          if (Array.isArray(cached?.data) && typeof cached?.timestamp === "number") {
+            const isFresh = Date.now() - cached.timestamp < CACHE_TTL_MS;
+            if (isFresh) {
+              fetchedInSessionRef.current.add(objectType);
+              persistFetchedSession();
+              setCustomProperties(prev => ({ ...prev, [objectType]: cached.data }));
+              return cached.data;
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ [FETCH_CUSTOM] Error parsing cached data:', error);
+          localStorage.removeItem(cacheKey);
         }
-      } catch { localStorage.removeItem(cacheKey); }
-    }
+      }
+      
+      // Validate user and profile
+      if (!user?.id || !profile) {
+        return [];
+      }
+      
+      // Check if token is expired and refresh if needed
+      const isExpired = profile.hubspot_access_token_expires_at_a && 
+        new Date(profile.hubspot_access_token_expires_at_a) <= new Date();
+      
+      if (isExpired) {
+        console.log('🔄 [FETCH_CUSTOM] Token expired, refreshing...');
+        try {
+          const backendBase = (process.env.NEXT_PUBLIC_DOMAIN_BACKEND || "http://localhost:3000/").replace(/\/?$/, "/");
+          const res = await fetch(`${backendBase}hubspot/refresh-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              refreshToken: profile.hubspot_refresh_token_a,
+              userId: user.id,
+              instance: "a",
+            }),
+          });
 
-    // token guards
-    if (!user?.id || !profile?.hubspot_access_token_a) return [];
+          if (!res.ok) {
+            console.log('❌ [FETCH_CUSTOM] Token refresh failed, skipping fetch');
+            return [];
+          }
 
-    // call proxy → backend (propertyType=custom)
-    const url = `/api/hubspot/schema/${objectType}?propertyType=custom&instance=a`;
-    const resp = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${profile.hubspot_access_token_a}`,
-        "X-User-ID": user.id,
-        "X-Portal-ID": String(profile.hubspot_portal_id_a || ""),
-      },
-      cache: "no-store",
-    });
-
-    if (!resp.ok) {
-      // minimal logs policy → fail safe
-      setCustomProperties(prev => ({ ...prev, [objectType]: [] }));
+          await res.json();
+          await refreshProfile();
+          console.log('✅ [FETCH_CUSTOM] Token refreshed successfully');
+        } catch (error) {
+          console.warn('⚠️ [FETCH_CUSTOM] Error refreshing token:', error);
+          return [];
+        }
+      }
+      
+      // Fetch from API
+      const url = `/api/hubspot/schema/${objectType}?propertyType=custom&userId=${user.id}&instance=a`;
+      
+      console.log('🔄 [FETCH_CUSTOM] Fetching custom properties for:', objectType);
+      console.log('🔄 [FETCH_CUSTOM] URL:', url);
+      console.log('🔄 [FETCH_CUSTOM] User ID:', user.id);
+      console.log('🔄 [FETCH_CUSTOM] Profile token exists:', !!profile.hubspot_access_token_a);
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${profile.hubspot_access_token_a}`,
+          'X-User-ID': user.id,
+          'X-Portal-ID': String(profile.hubspot_portal_id_a || '')
+        }
+      });
+      
+      console.log('🔄 [FETCH_CUSTOM] Response status:', response.status);
+      console.log('🔄 [FETCH_CUSTOM] Response ok:', response.ok);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [FETCH_CUSTOM] Response error:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      console.log('🔄 [FETCH_CUSTOM] Response data:', data);
+      console.log('🔄 [FETCH_CUSTOM] Data ok:', data.ok);
+      console.log('🔄 [FETCH_CUSTOM] Data results:', data.data?.results?.length || 0);
+      
+      // Extract properties from response
+      const properties = (data.ok && data.data?.results) ? data.data.results :
+                        data.results ? data.results :
+                        data.properties ? data.properties : [];
+      
+      console.log('🔄 [FETCH_CUSTOM] Extracted properties:', properties.length);
+      
+      // Filter out default properties to ensure only custom properties
+      const customOnlyProperties = properties.filter((prop: any) => !prop.hubspotDefined);
+      
+      console.log('🔄 [FETCH_CUSTOM] Custom only properties:', customOnlyProperties.length);
+      console.log('🔄 [FETCH_CUSTOM] Sample custom property:', customOnlyProperties[0]);
+      
+      // Cache the result
+      try {
+        const payload = { data: customOnlyProperties, timestamp: Date.now() };
+        localStorage.setItem(cacheKey, JSON.stringify(payload));
+        setCustomProperties(prev => ({ ...prev, [objectType]: customOnlyProperties }));
+      } catch (error) {
+        console.warn('⚠️ [FETCH_CUSTOM] Error caching data:', error);
+      }
+      
+      fetchedInSessionRef.current.add(objectType);
+      persistFetchedSession();
+      return customOnlyProperties;
+      
+    } catch (error) {
+      console.error('❌ [FETCH_CUSTOM] Error fetching custom properties:', error);
       return [];
     }
-
-    const data = await resp.json();
-    // ✅ backend अब हमेशा .results देता है
-    const list: any[] = Array.isArray(data?.results) ? data.results : [];
-
-    // map to PropertyItem
-    const payload: PropertyItem[] = list.map((p: any) => ({
-      name: p?.name,
-      label: p?.label || p?.name,
-      description: p?.description || "",
-      type: p?.type,
-      fieldType: p?.fieldType,
-      object: objectType,
-      source: "custom",
-    })).filter(x => !!x.name);
-
-    setCustomProperties(prev => ({ ...prev, [objectType]: payload }));
-    try { localStorage.setItem(cacheKey, JSON.stringify({ data: payload, timestamp: Date.now() })); } catch {}
-
-    return payload;
-  } catch {
-    setCustomProperties(prev => ({ ...prev, [objectType]: [] }));
-    return [];
-  }
-};
-
+  };
 
   const fetchAllCustomProperties = async () => {
     if (selectedObjects.size === 0) return;
+    
     setIsLoadingCustom(true);
+    const customProps: CustomPropertiesState = { contacts: [], companies: [], deals: [], tickets: [] };
+    
     try {
-      const nextState: CustomPropertiesState = { contacts: [], companies: [], deals: [], tickets: [] };
-      await Promise.all(Array.from(selectedObjects).map(async (obj) => {
-        nextState[obj] = await fetchCustomProperties(obj);
-      }));
-      setCustomProperties(nextState);
+      await Promise.all(
+        Array.from(selectedObjects).map(async (objectType) => {
+          const props = await fetchCustomProperties(objectType);
+          customProps[objectType] = props;
+        })
+      );
+      setCustomProperties(customProps);
+    } catch (error) {
+      console.error('❌ [FETCH_ALL_CUSTOM] Error fetching all custom properties:', error);
     } finally {
       setIsLoadingCustom(false);
     }
   };
 
-  // expose public API
   return {
     customProperties,
     isLoadingCustom,
     fetchCustomProperties,
     fetchAllCustomProperties,
-    clearCustomCache: () => {
-      try {
-        ['contacts','companies','deals','tickets'].forEach(k => localStorage.removeItem(`customProperties_${k}`));
-        sessionStorage.removeItem('fetchedInSessionObjects');
-      } catch {}
-      fetchedInSessionRef.current = new Set();
-      setCustomProperties({ contacts: [], companies: [], deals: [], tickets: [] });
-    }
   };
 };
 
-// (existing) property pool hook below stays as-is
 export const usePropertyPool = () => {
   const [propPool, setPropPool] = useState<PropPoolState>({
-    contacts: [],
-    companies: [],
-    deals: [],
-    tickets: [],
+    contacts: null,
+    companies: null,
+    deals: null,
+    tickets: null,
   });
   const [loadedLists, setLoadedLists] = useState<LoadedListsState>({
     contacts: false,
@@ -444,17 +212,98 @@ export const usePropertyPool = () => {
     deals: false,
     tickets: false,
   });
+  const { user, profile, refreshProfile } = useUser();
 
-  const loadProps = async (objectType: ObjectKey, list: PropertyItem[], defaultMetaByName: Record<ObjectKey, Record<string, any>>) => {
-    const enriched = (list || []).map((p) => ({
+  const mergeWithDefaults = (obj: ObjectKey, list: PropertyItem[], defaultMetaByName: Record<ObjectKey, Record<string, { type?: string; fieldType?: string }>>) => {
+    const meta = defaultMetaByName[obj];
+    return list.map((p) => ({
       ...p,
-      type: defaultMetaByName[objectType][p.name]?.type || p.type,
-      fieldType: defaultMetaByName[objectType][p.name]?.fieldType || p.fieldType,
+      type: p.type ?? meta[p.name]?.type,
+      fieldType: p.fieldType ?? meta[p.name]?.fieldType,
     }));
-
-    setPropPool((prev) => ({ ...prev, [objectType]: enriched }));
-    setLoadedLists((prev) => ({ ...prev, [objectType]: true }));
   };
 
-  return { propPool, loadedLists, loadProps, setPropPool };
+  const loadProps = async (obj: ObjectKey, defaultMapModal: Record<ObjectKey, PropertyItem[]>, defaultMetaByName: Record<ObjectKey, Record<string, { type?: string; fieldType?: string }>>) => {
+    if (loadedLists[obj]) {
+      return;
+    }
+    
+    let arr: PropertyItem[] = [];
+    
+    try {
+      if (user?.id && profile) {
+                  // Check if token is expired and refresh if needed
+                  const isExpired = profile.hubspot_access_token_expires_at_a && 
+                    new Date(profile.hubspot_access_token_expires_at_a) <= new Date();
+                  
+                  if (isExpired) {
+                    console.log('🔄 [LOAD_PROPS] Token expired, refreshing...');
+                    try {
+                      const backendBase = (process.env.NEXT_PUBLIC_DOMAIN_BACKEND || "http://localhost:3000/").replace(/\/?$/, "/");
+                      const res = await fetch(`${backendBase}hubspot/refresh-token`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({
+                          refreshToken: profile.hubspot_refresh_token_a,
+                          userId: user.id,
+                          instance: "a",
+                        }),
+                      });
+
+                      if (!res.ok) {
+                        console.log('❌ [LOAD_PROPS] Token refresh failed, skipping load');
+                        return;
+                      }
+
+                      await res.json();
+                      await refreshProfile();
+                      console.log('✅ [LOAD_PROPS] Token refreshed successfully');
+                    } catch (error) {
+                      console.warn('⚠️ [LOAD_PROPS] Error refreshing token:', error);
+                      return;
+                    }
+                  }
+        
+        // Fetch from API
+        const res = await fetch(`/api/hubspot/schema/${obj}?userId=${user.id}&instance=a`);
+        
+        if (res.ok) {
+          const data = await res.json();
+          const list = data?.data?.results || data?.results || data?.properties || [];
+          
+          arr = (list as any[]).map((p) => ({
+            name: p.name || p.internalName,
+            label: p.label || p.name || p.internalName,
+            type: p.type,
+            fieldType: p.fieldType,
+          }));
+          
+        } else {
+          console.warn('⚠️ [LOAD_PROPS] API response not ok for:', obj, 'status:', res.status);
+        }
+      }
+    } catch (error) {
+      console.error('❌ [LOAD_PROPS] Error loading properties for:', obj, error);
+    }
+    
+    // Fallback to defaults if no data loaded
+    if (!arr.length) {
+      arr = defaultMapModal[obj];
+    } else {
+      // Merge with defaults to ensure all properties have type and fieldType
+      arr = mergeWithDefaults(obj, arr, defaultMetaByName);
+    }
+    
+    setPropPool((s) => ({ ...s, [obj]: arr }));
+    setLoadedLists((s) => ({ ...s, [obj]: true }));
+  };
+
+  return {
+    propPool,
+    loadedLists,
+    loadProps,
+    setPropPool,
+  };
 };
+

@@ -1,15 +1,11 @@
-"use client";
+'use client';
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { DeactivatedUserRedirect } from "./DeactivatedUserRedirect";
 import { useUser } from "@/context/UserContext";
 
-export default function ProtectedRoute({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, profile, isLoading: userLoading } = useUser();
@@ -34,14 +30,10 @@ export default function ProtectedRoute({
     }
 
     // Check if user is deactivated or has requested reactivation
-    if (
-      profile &&
-      (profile.status === "deactivated" ||
-        profile.status === "reactivation_requested")
-    ) {
+    if (profile && (profile.status === 'deactivated' || profile.status === 'reactivation_requested')) {
       // Set loading to false so the deactivated page can render
       setLoading(false);
-      router.replace("/deactivated");
+      router.replace('/deactivated');
       return;
     }
 
@@ -51,19 +43,6 @@ export default function ProtectedRoute({
 
   // Show loading only if user context is still loading or if we're still in loading state
   if (loading || userLoading) {
-    // ✅ If user already exists (session active), don't block the UI on tab switch.
-    if (user) {
-      return (
-        <>
-          {children}
-          <div className="fixed right-4 top-4 z-50">
-            <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-primary opacity-70"></div>
-          </div>
-        </>
-      );
-    }
-
-    // ⏳ First load with no user yet → keep full-page spinner
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary"></div>

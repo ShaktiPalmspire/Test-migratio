@@ -467,17 +467,13 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
 
   return (
     <div
-  className={`fixed inset-0 transition-opacity duration-200 ${
-    isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-  } bg-gray-900 bg-opacity-75 flex items-center justify-center z-50`}
-  onPointerDown={onClose}
->
-  <div
-    className={`bg-gray-800 rounded-lg p-6 w-full max-w-2xl transform transition-transform duration-200 ${
-      isOpen ? "scale-100" : "scale-95"
-    }`}
-    onPointerDown={(e) => e.stopPropagation()}
+    className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 mb-0"
+    onPointerDown={onClose} // background click = close
   >
+    <div
+      className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+      onPointerDown={(e) => e.stopPropagation()} // andar click safe
+    >
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-gray-200">
             Add Custom Property Mapping

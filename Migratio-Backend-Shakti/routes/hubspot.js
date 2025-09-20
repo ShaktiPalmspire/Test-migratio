@@ -2,15 +2,8 @@ const express = require('express');
 const router = express.Router();
 
 const hubspotController = require('../controllers/hubspot/hubspotController');
-let requireHubspotAuth = require('../middleware/requireHubspotAuth');
-if (typeof requireHubspotAuth !== 'function') {
-  // no-op fallback in dev so the app doesn't crash if the export isn't a function
-  requireHubspotAuth = (req, _res, next) => next();
-}
+const requireHubspotAuth = require('../middleware/requireHubspotAuth');
 const { cache } = require('../middleware/cache');
-
-// --- Schema GET handler (this one IS a function) ---
-const { getSchemaProperties } = require('../controllers/hubspot/hubspotPropertyController');
 
 // ----- basic + auth'd routes -----
 router.get('/install', hubspotController.install);
@@ -52,14 +45,27 @@ router.get(
 );
 
 // ----- SCHEMA endpoints -----
-// GET -> our stable controller (filter via ?propertyType=default|custom|all)
-// POST -> only if implemented in hubspotController
-router.get('/schema/:objectType', requireHubspotAuth, getSchemaProperties);
+// GET is cached (5 min). POST remains uncached (it mutates).
+// Query parameters:
+//   - propertyType: 'default' (hubspotDefined: true) or 'custom' (hubspotDefined: false) or undefined (all properties)
+// Examples:
+//   GET /schema/contacts?propertyType=default  -> Only HubSpot default properties
+//   GET /schema/contacts?propertyType=custom   -> Only custom properties  
+//   GET /schema/contacts                       -> All properties
+router.route('/schema/:objectType')
+  .get(
+    requireHubspotAuth,
+    cache((req) => {
+      const accountId = (req.user?.accountId) || (req.session?.userId) || 'anon';
+      const objectType = req.params.objectType; // e.g., 'companies'
+      const q = req._cache?.stableQuery || "{}"; // comes from cache middleware
+      return `cache:hubspot:schema:${objectType}:${accountId}:${q}`;
+    }, 300),
+    hubspotController.getSchema
+  )
+  .post(requireHubspotAuth, hubspotController.createProperty);
 
-if (typeof hubspotController.createProperty === 'function') {
-  router.post('/schema/:objectType', requireHubspotAuth, hubspotController.createProperty);
-}
-
+// ----- other -----
 router.post('/objects/:type/batch/upsert', requireHubspotAuth, hubspotController.upsertObjectRecords);
 router.post('/uninstall/:instance', hubspotController.uninstallApp);
 

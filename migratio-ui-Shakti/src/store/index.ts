@@ -4,20 +4,17 @@ import {
   createAction,
   AnyAction,
 } from '@reduxjs/toolkit';
-import customPropertiesReducer from "./customPropertiesSlice";
+
 import contactsReducer from './slices/contactsSlice';
 import companiesReducer from './slices/companiesSlice';
 import dealsReducer from './slices/dealsSlice';
 import ticketsReducer from './slices/ticketsSlice';
-import propertiesReducer from './slices/propertiesSlice';
 
 const appReducer = combineReducers({
   contacts: contactsReducer,
   companies: companiesReducer,
   deals: dealsReducer,
   tickets: ticketsReducer,
-  properties: propertiesReducer,
-  customProperties: customPropertiesReducer,
 });
 
 // optional global reset
