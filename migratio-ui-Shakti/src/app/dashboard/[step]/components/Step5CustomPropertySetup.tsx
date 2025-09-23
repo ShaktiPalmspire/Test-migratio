@@ -437,6 +437,7 @@ export default function Step5CustomPropertySetup({
             newProperty: mapping.newProperty,
             sourceName: mapping.sourceName,
             targetName: mapping.targetName,
+            
           };
 
           if (mapping.type === "userdefined") {

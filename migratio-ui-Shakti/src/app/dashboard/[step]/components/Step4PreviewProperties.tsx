@@ -238,6 +238,19 @@ export function Step4PreviewProperties({
         targetLabel = targetProperty?.label || targetName;
         propertyType = "custom";
       }
+const isDuplicate = rows.some(
+  (r) =>
+    r.object === addObject &&
+    r.source === (selectedSource?.label || sourceName) &&
+    r.target === targetName
+);
+
+if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
+  console.warn("⚠️ Skipping duplicate/self-mapping:", targetName);
+  setIsAddOpen(false);
+  return;
+}
+
 
       // Create the new row
       const newRow: PreviewRow = {
@@ -253,6 +266,7 @@ export function Step4PreviewProperties({
         return newRows;
       });
       setHasUnsavedChanges(true);
+      
 
       // Save mapping to database
       try {
@@ -477,9 +491,12 @@ export function Step4PreviewProperties({
               .filter((row) => row.type === "custom")
               .map((row) => row.source)
           );
-          const newHubSpotCustomRows = customRows.filter(
-            (row) => !existingCustomSources.has(row.source)
-          );
+ const newHubSpotCustomRows = customRows.filter(
+  (row) =>
+    !existingCustomSources.has(row.source) &&
+    row.source !== row.target // ❌ skip self-mapping
+);
+
 
           const finalRows = [...prevRows, ...newHubSpotCustomRows];
           return finalRows;

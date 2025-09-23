@@ -16,6 +16,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Step4PreviewProperties } from "./components/Step4PreviewProperties";
 import type { StepIndex } from "./types/dashboard";
 import Step5CustomPropertySetup from "./components/Step5CustomPropertySetup";
+import Step6ObjectRecords from "./components/Step6ObjectRecords";
 
 import {
   SidebarInset,
@@ -136,7 +137,7 @@ function DashboardContent() {
   // Cache mapping rows per object so switching doesn't lose edits
   const [objectRows, setObjectRows] = useState<Record<ObjectKey, MappingRow[]>>({} as Record<ObjectKey, MappingRow[]>);
 
-  const { user, isLoading, profile, refreshProfile, loadSelectedObjects } = useUser();
+  const { user, isLoading, profile, refreshProfile, refreshProfileWithRetry, loadSelectedObjects } = useUser();
 
   // Check if user is admin based on email
   const isAdmin = useMemo(() => {
@@ -207,7 +208,7 @@ function DashboardContent() {
     try {
       const stepRaw = params?.step;
       const stepNum = Number(Array.isArray(stepRaw) ? stepRaw[0] : stepRaw);
-      if (![1,2,3,4,5].includes(stepNum)) { router.replace("/dashboard/1"); return; }
+      if (![1,2,3,4,5,6].includes(stepNum)) { router.replace("/dashboard/1"); return; }
       setStep(stepNum as StepIndex);
 
       const savedCrm = typeof window !== "undefined" ? localStorage.getItem("selectedIntegration") : null;
@@ -328,6 +329,91 @@ function DashboardContent() {
     localStorage.setItem("selectedObjects", JSON.stringify(allObjects));
   }, []);
 
+  // Start migration handler for Step 6
+  const handleMigrateToCrmB = useCallback(async () => {
+    try {
+      if (!user?.id) throw new Error("User not authenticated");
+      if (!profile?.hubspot_portal_id_a || !profile?.hubspot_portal_id_b) {
+        throw new Error("Connect both HubSpot CRM A and B before migrating");
+      }
+      const objects = Array.from(selectedObjects);
+      if (objects.length === 0) {
+        // Default to all supported objects if none explicitly selected
+        const defaultObjects: ObjectKey[] = ["contacts", "companies", "deals", "tickets"];
+        defaultObjects.forEach((o) => { if (!objects.includes(o)) objects.push(o); });
+      }
+
+      const runMigration = async () => {
+        const res = await fetch("/api/hubspot/migrate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            // Pass access tokens so API route can talk to HubSpot directly
+            ...(profile?.hubspot_access_token_a ? { "X-Access-Token-A": profile.hubspot_access_token_a } : {}),
+            ...(profile?.hubspot_access_token_b ? { "X-Access-Token-B": profile.hubspot_access_token_b } : {}),
+            "X-User-ID": user.id,
+            "X-Portal-ID-A": String(profile.hubspot_portal_id_a),
+            "X-Portal-ID-B": String(profile.hubspot_portal_id_b),
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            sourceInstance: "a",
+            targetInstance: "b",
+            objects,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { res, data } as const;
+      };
+
+      let { res, data } = await runMigration();
+      if (!res.ok || data?.success === false) {
+        if (res.status === 401 && (data?.errorCode === 'EXPIRED_TOKEN' || /expired/i.test(data?.message || ''))) {
+          // Try automatic refresh for A and B, then retry once
+          try {
+            if (profile?.hubspot_refresh_token_a) {
+              await fetch('/api/hubspot/refresh-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken: profile.hubspot_refresh_token_a, userId: user.id, instance: 'a' }),
+              });
+            }
+            if (profile?.hubspot_refresh_token_b) {
+              await fetch('/api/hubspot/refresh-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken: profile.hubspot_refresh_token_b, userId: user.id, instance: 'b' }),
+              });
+            }
+            await refreshProfileWithRetry?.(3);
+          } catch {}
+          ({ res, data } = await runMigration());
+          if (!res.ok || data?.success === false) {
+            const per = data?.data?.perObject;
+            const firstErr = per ? Object.values(per).flatMap((s: any) => s?.errors || [])?.[0] : undefined;
+            throw new Error(firstErr || data?.message || data?.error || 'Migration failed after refresh');
+          }
+        } else {
+          const per = data?.data?.perObject;
+          const firstErr = per ? Object.values(per).flatMap((s: any) => s?.errors || [])?.[0] : undefined;
+          throw new Error(firstErr || data?.message || data?.error || "Migration failed");
+        }
+      }
+      const totals = data?.data?.totals;
+      if (!totals || totals.created <= 0) {
+        const per = data?.data?.perObject;
+        const firstErr = per ? Object.values(per).flatMap((s: any) => s?.errors || [])?.[0] : undefined;
+        toast.error(firstErr || data?.message || 'No records created');
+        return null;
+      }
+      toast.success(data?.message || `Migration completed (${totals.created}/${totals.fetched})`);
+      return { created: totals.created, fetched: totals.fetched } as { created: number; fetched: number };
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to start migration");
+      return null;
+    }
+  }, [user?.id, profile?.hubspot_portal_id_a, profile?.hubspot_portal_id_b, selectedObjects]);
+
   const handleConnect = async (instance: "a" | "b") => {
     try {
       if (user?.id) {
@@ -390,6 +476,58 @@ function DashboardContent() {
       console.error("❌ Error in handleConnect:", e);
       setError("Failed to initiate connection. Please try again.");
     }
+  };
+
+  // Helper component (inline) to show count for object from HubSpot A
+  const ObjectCardWithCount: React.FC<{ objectKey: ObjectKey; portalIdA?: number }> = ({ objectKey, portalIdA }) => {
+    const [count, setCount] = useState<number | null>(null);
+    const [loading, setLoading] = useState<boolean>(false);
+    const [err, setErr] = useState<string | null>(null);
+
+    useEffect(() => {
+      const fetchCount = async () => {
+        if (!portalIdA || !profile?.hubspot_access_token_a) return;
+        try {
+          setLoading(true);
+          setErr(null);
+          const res = await fetch(`/api/hubspot/objects/${objectKey}`, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${profile.hubspot_access_token_a}`,
+              "X-Portal-ID": String(portalIdA),
+            },
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data?.success) throw new Error(data?.message || "Failed to fetch count");
+          setCount(data.data?.total ?? 0);
+        } catch (e: any) {
+          setErr(e?.message || "Error");
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchCount();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [portalIdA, objectKey, profile?.hubspot_access_token_a]);
+
+    return (
+      <div className="border rounded-md p-4 bg-white flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span className="capitalize font-medium">{objectKey}</span>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">Object</span>
+        </div>
+        <div className="text-xs text-gray-500">Preview or migrate records for this object.</div>
+        <div className="mt-2 text-sm">
+          {loading ? (
+            <span className="text-gray-500">Loading count…</span>
+          ) : err ? (
+            <span className="text-red-600">{err}</span>
+          ) : (
+            <span className="text-gray-800">HubSpot A Records: <strong>{count ?? 0}</strong></span>
+          )}
+        </div>
+      </div>
+    );
   };
 
   // 🔧 Core uninstall logic (no alerts) — returns success message
@@ -693,9 +831,20 @@ function DashboardContent() {
           {step === 5 && (
             <Step5CustomPropertySetup
               onBack={handleStepChange}
+              onNext={handleStepChange}
+              nextStep={6 as StepIndex}
               selectedObjects={selectedObjects}
               hubspotStatusA={hubspotStatusA}
               hubspotStatusB={hubspotStatusB}
+            />
+          )}
+
+          {/* STEP 6: Object Records & Migrate */}
+          {step === 6 && (
+            <Step6ObjectRecords
+              onBack={handleStepChange}
+              hubspotStatusA={hubspotStatusA}
+              onMigrateClick={handleMigrateToCrmB}
             />
           )}
         </main>

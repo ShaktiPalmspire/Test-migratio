@@ -2,7 +2,7 @@ import type { ObjectKey } from "@/components/Mapping/MappingModal";
 
 // Dashboard-specific types
 export type CrmId = "pipedrive" | "hubspot" | "zoho" | "zendesk";
-export type StepIndex = 1 | 2 | 3 | 4 | 5;
+export type StepIndex = 1 | 2 | 3 | 4 | 5 | 6;
 
 // CRM configuration interface
 export interface CrmConfig {

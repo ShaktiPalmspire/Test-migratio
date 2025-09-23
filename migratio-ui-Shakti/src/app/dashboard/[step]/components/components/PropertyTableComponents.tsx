@@ -786,11 +786,13 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   const getUserDefinedCount = (objectType: ObjectKey) =>
     filteredRowsWithoutDuplicates.filter(
       (r) => r.object === objectType && r.type === "userdefined"
+      
     ).length;
   const getObjectTotal = (objectType: ObjectKey) =>
     getDefaultCount(objectType) +
     getCustomCount(objectType) +
     getUserDefinedCount(objectType);
+
 
   return (
     <div className="mt-4 p-4 bg-gray-50 rounded-lg">

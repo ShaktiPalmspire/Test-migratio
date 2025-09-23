@@ -9,8 +9,59 @@ export async function GET(
     const propertyType = searchParams.get('propertyType');
     const userId = searchParams.get('userId');
     const instance = searchParams.get('instance');
+    const countFlag = searchParams.get('count');
     const resolvedParams = await params;
     
+    // If count=true, return object records count from HubSpot (direct call)
+    if (countFlag) {
+      const authHeader = request.headers.get('authorization');
+      const portalIdHeader = request.headers.get('x-portal-id');
+      if (!authHeader) {
+        return NextResponse.json({ success: false, message: 'Missing Authorization header' }, { status: 401 });
+      }
+      if (!portalIdHeader) {
+        return NextResponse.json({ success: false, message: 'Missing X-Portal-ID header' }, { status: 400 });
+      }
+
+      const allowed: Record<string, string> = {
+        contacts: 'contacts',
+        companies: 'companies',
+        deals: 'deals',
+        tickets: 'tickets',
+      };
+      const hubspotObject = allowed[resolvedParams.objectType?.toLowerCase()];
+      if (!hubspotObject) {
+        return NextResponse.json({ success: false, message: `Unsupported object type: ${resolvedParams.objectType}` }, { status: 400 });
+      }
+
+      const url = `https://api.hubapi.com/crm/v3/objects/${hubspotObject}/search`;
+      const body = {
+        filterGroups: [],
+        limit: 1,
+        properties: ['hs_object_id'],
+        includeTotal: true,
+      } as any;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: authHeader,
+          'X-HubSpot-User-Id': portalIdHeader,
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        return NextResponse.json(
+          { success: false, message: data?.message || data?.error || 'Failed to fetch count' },
+          { status: res.status },
+        );
+      }
+      const total: number | undefined = (data && (data.total as number)) ?? undefined;
+      return NextResponse.json({ success: true, data: { total: total ?? 0 } });
+    }
+
     // Get the backend URL from environment
     const backendUrl = process.env.NEXT_PUBLIC_DOMAIN_BACKEND || 'http://localhost:3000';
     
