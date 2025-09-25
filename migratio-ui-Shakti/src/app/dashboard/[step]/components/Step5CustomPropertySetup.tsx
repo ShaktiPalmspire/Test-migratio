@@ -11,9 +11,7 @@ import { toast } from "sonner";
 
 interface Step5Props {
   onBack: (step: StepIndex) => void;
-  /** optional next handler; if not provided we'll dispatch window "step-next" */
   onNext?: (step: StepIndex) => void;
-  /** optional explicit next step index; defaults to 6 if not provided */
   nextStep?: StepIndex;
 
   selectedObjects: Set<ObjectKey>;
@@ -41,11 +39,9 @@ export default function Step5CustomPropertySetup({
     alreadyExistsProperties: string[];
   } | null>(null);
 
-  // Track which properties were successfully created or already existed
   const [createdProperties, setCreatedProperties] = useState<Set<string>>(new Set());
   const [existingProperties, setExistingProperties] = useState<Set<string>>(new Set());
 
-  // Load migration status from localStorage on component mount
   useEffect(() => {
     const loadMigrationStatus = () => {
       try {
@@ -61,7 +57,6 @@ export default function Step5CustomPropertySetup({
     loadMigrationStatus();
   }, []);
 
-  // Refresh token when component mounts to ensure it's valid
   useEffect(() => {
     const refreshTokenOnLoad = async () => {
       if (profile?.hubspot_refresh_token_b && !profile?.hubspot_access_token_b) {
@@ -75,7 +70,6 @@ export default function Step5CustomPropertySetup({
     refreshTokenOnLoad();
   }, [profile?.hubspot_refresh_token_b, profile?.hubspot_access_token_b]);
 
-  // Load mappings from Supabase
   useEffect(() => {
     const loadMappings = async () => {
       if (!user?.id) return;
@@ -99,14 +93,12 @@ export default function Step5CustomPropertySetup({
     loadMappings();
   }, [user?.id, refreshTick]);
 
-  // Listen for updates from Step 4 and refresh
   useEffect(() => {
     const handler = () => setRefreshTick((t) => t + 1);
     window.addEventListener("mappings-updated", handler);
     return () => window.removeEventListener("mappings-updated", handler);
   }, []);
 
-  // Function to refresh HubSpot B token
   const refreshHubSpotBToken = async () => {
     try {
       if (!profile?.hubspot_refresh_token_b) {
@@ -143,7 +135,6 @@ export default function Step5CustomPropertySetup({
     }
   };
 
-  // Function to check if property already exists in HubSpot B
   const checkPropertyExists = async (objectType: string, propertyName: string, accessToken: string) => {
     try {
       const response = await fetch(`/api/hubspot/schema/${objectType}/${propertyName}`, {
@@ -161,7 +152,6 @@ export default function Step5CustomPropertySetup({
     }
   };
 
-  // Handle migration of user-defined properties to HubSpot B
   const handleMigratePropertiesToHubSpotB = async () => {
     if (!hubspotStatusB.portalId || !profile?.hubspot_access_token_b) {
       toast.error("HubSpot B credentials not available", {
@@ -176,7 +166,6 @@ export default function Step5CustomPropertySetup({
       return;
     }
 
-    // Filter only user-defined properties (skip reserved/app prefixes)
     const allPropertiesToMigrate = detailedProperties.filter((prop) => {
       if (prop.category !== "Userdefined") return false;
       const name = prop.name.toLowerCase();
@@ -204,7 +193,6 @@ export default function Step5CustomPropertySetup({
         }
       }
 
-      // copies so we can mutate then set
       const newCreatedProperties = new Set(createdProperties);
       const newExistingProperties = new Set(existingProperties);
 
@@ -217,7 +205,6 @@ export default function Step5CustomPropertySetup({
         try {
           const propertyKey = `${property.object}-${property.name}`;
 
-          // Skip if processed earlier
           if (newCreatedProperties.has(propertyKey) || newExistingProperties.has(propertyKey)) {
             alreadyExistsCount++;
             continue;
@@ -252,11 +239,9 @@ export default function Step5CustomPropertySetup({
           }
         }
 
-        // small throttle
         await new Promise((resolve) => setTimeout(resolve, 400));
       }
 
-      // persist & re-render
       setCreatedProperties(newCreatedProperties);
       setExistingProperties(newExistingProperties);
       localStorage.setItem("hubspotB_createdProperties", JSON.stringify([...newCreatedProperties]));
@@ -281,7 +266,6 @@ export default function Step5CustomPropertySetup({
             duration: 6000,
           });
         }
-        // No extra state needed—render logic below will switch to Next automatically
       } else {
         throw new Error("No properties were created successfully");
       }
@@ -302,68 +286,93 @@ export default function Step5CustomPropertySetup({
     }
   };
 
-  // Function to create individual property in HubSpot B
+  // 🔑 Updated: handles duplicate names & labels
   const createPropertyInHubSpotB = async (objectType: string, property: any, accessToken?: string) => {
     if (!property.name) {
       throw new Error(`Invalid property data: missing name for property ${JSON.stringify(property)}`);
     }
 
     const sanitizedName = property.name.toLowerCase().replace(/[^a-z0-9_]/g, "_");
-    const finalName = /^[0-9]/.test(sanitizedName) ? `prop_${sanitizedName}` : sanitizedName;
+ 
 
-    const reservedNames = [
-      "id",
-      "createdate",
-      "lastmodifieddate",
-      "hs_object_id",
-      "hs_createdate",
-      "hs_lastmodifieddate",
-      "email",
-      "firstname",
-      "lastname",
-      "phone",
-      "company",
-      "website",
-      "city",
-      "state",
-      "country",
-      "dealname",
-      "amount",
-      "closedate",
-      "pipeline",
-      "dealstage",
-      "dealtype",
-      "subject",
-      "content",
-      "hs_ticket_id",
-      "hs_ticket_category",
-      "hs_ticket_priority",
-    ];
+    async function fetchExistingProperties(objectType: string, accessToken: string, portalId: string) {
+      const resp = await fetch(`/api/hubspot/schema/${objectType}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-Portal-ID": portalId.toString(),
+        },
+      });
 
-    const finalPropertyName = reservedNames.includes(finalName.toLowerCase())
-      ? `${finalName}_custom`
-      : finalName;
+      if (!resp.ok) return { names: new Set<string>(), labels: new Set<string>() };
 
-    const propertyData = {
-      name: finalPropertyName,
-      label: finalPropertyName,
-      type: mapPropertyType(property.type),
-      fieldType: "text",
-      description: `Migrated from HubSpot A - ${property.name}`,
-      userId: user?.id,
-      instance: "b",
-    };
+      const data = await resp.json();
+      const names = new Set((data.results || []).map((p: any) => p.name.toLowerCase()));
+      const labels = new Set((data.results || []).map((p: any) => (p.label || "").toLowerCase()));
 
-    const response = await fetch(`/api/hubspot/schema/${objectType}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken || profile?.hubspot_access_token_b}`,
-        "X-User-ID": user?.id || "",
-        "X-Portal-ID": hubspotStatusB.portalId?.toString() || "",
-      },
-      body: JSON.stringify(propertyData),
-    });
+      return { names, labels };
+    }
+
+const { names: existingNames, labels: existingLabels } =
+  await fetchExistingProperties(objectType, accessToken!, hubspotStatusB.portalId!.toString());
+
+const baseName = property.name
+  .toLowerCase()
+  .replace(/[^a-z0-9_]/g, "_")
+  .replace(/_+/g, "_")
+  .replace(/^_+|_+$/g, "");
+
+function toTitleCase(str: string) {
+  return str
+    .split("_")
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+const finalPropertyName = baseName;
+const finalLabel = toTitleCase(baseName);
+
+// ✅ Skip if property already exists by name or label
+if (existingNames.has(finalPropertyName.toLowerCase()) || existingLabels.has(finalLabel.toLowerCase())) {
+  console.log(`[SKIP] Property ${finalPropertyName} / ${finalLabel} already exists in HubSpot B`);
+  return; // ❌ Do not create again
+}
+
+const propertyData = {
+  name: finalPropertyName,     // aditya_chauhan
+  label: finalLabel,           // Aditya Chauhan
+  type: mapPropertyType(property.type),
+  fieldType: "text",
+  description: `Migrated from HubSpot A - ${property.label || property.name}`,
+  userId: user?.id,
+  instance: "b",
+};
+
+const response = await fetch(`/api/hubspot/schema/${objectType}`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${accessToken || profile?.hubspot_access_token_b}`,
+    "X-User-ID": user?.id || "",
+    "X-Portal-ID": hubspotStatusB.portalId?.toString() || "",
+  },
+  body: JSON.stringify(propertyData),
+});
+
+if (!response.ok) {
+  let errorMessage = `Failed to create property: ${response.statusText}`;
+  try {
+    const errorData = await response.json();
+    errorMessage += ` - ${errorData.message || errorData.error || JSON.stringify(errorData)}`;
+  } catch {
+    const errorText = await response.text();
+    errorMessage += ` - Raw response: ${errorText.substring(0, 200)}`;
+  }
+  throw new Error(errorMessage);
+}
+
+
+
 
     if (!response.ok) {
       let errorMessage = `Failed to create property: ${response.statusText}`;
@@ -380,7 +389,6 @@ export default function Step5CustomPropertySetup({
     await response.json();
   };
 
-  // Map property types from HubSpot A to HubSpot B
   const mapPropertyType = (type: string) => {
     const typeMap: Record<string, string> = {
       string: "string",
@@ -437,7 +445,6 @@ export default function Step5CustomPropertySetup({
             newProperty: mapping.newProperty,
             sourceName: mapping.sourceName,
             targetName: mapping.targetName,
-            
           };
 
           if (mapping.type === "userdefined") {
@@ -467,13 +474,11 @@ export default function Step5CustomPropertySetup({
     };
   }, [selectedObjects, mappingsData, isLoading]);
 
-  // helper to go next
   const handleNext = () => {
     const step: StepIndex = (nextStep ?? (6 as StepIndex)) as StepIndex;
     if (onNext) onNext(step);
     else window.dispatchEvent(new CustomEvent("step-next", { detail: { step } }));
   };
-
   return (
     <>
       <Heading as="h2" className="mt-8">

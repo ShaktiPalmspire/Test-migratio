@@ -53,6 +53,14 @@ export function Step4PreviewProperties({
   selectedObjects,
 }: Step4PreviewPropertiesProps) {
   const { user, profile, upsertMappedJson } = useUser();
+  
+  // Get unique identifier for HubSpot instance - use user ID as it's always available
+  const hubspotInstanceIdentifier = useMemo(() => {
+    // Use user ID as the primary identifier for data separation
+    // If you need to support multiple HubSpot accounts per user, you'll need to store this differently
+    return user?.id || 'default';
+  }, [user]);
+
   const { customProperties, isLoadingCustom, fetchAllCustomProperties } =
     useCustomProperties(selectedObjects);
   const { propPool, loadedLists, loadProps, setPropPool } = usePropertyPool();
@@ -174,140 +182,6 @@ export function Step4PreviewProperties({
     };
   }, [defaultMapModal]);
 
-  // Handle adding new property mapping
-  const handleAddProperty = async (createdProperty?: PropertyItem) => {
-    try {
-      // If a custom property was created, we should proceed even if selectedProperty is empty
-      if (!selectedProperty && !createdProperty) {
-        return;
-      }
-
-      // Decide mapping type and labels
-      // Default to custom when mapping to an existing property (no checkbox)
-      let propertyType: "custom" | "default" | "userdefined" = "custom";
-      let targetName = selectedTargetName || selectedProperty;
-      let sourceName = selectedProperty;
-      let targetLabel = selectedTargetName;
-
-      if (createdProperty) {
-        propertyType = "userdefined"; // Newly created properties should be userdefined
-        targetName = createdProperty.name;
-        targetLabel = createdProperty.label;
-        sourceName = selectedProperty || createdProperty.label; // Use selectedProperty if available, otherwise use label
-        // Check if this is a custom property by looking at the propPool
-        const isCustomProperty =
-          propPool[addObject]?.some((p) => p.name === selectedTargetName) ||
-          false;
-
-        // Additional check: if selectedTargetName is not empty and doesn't match any existing property,
-        // it might be a newly created custom property
-        const isNewCustomProperty =
-          selectedTargetName &&
-          !propPool[addObject]?.some((p) => p.name === selectedTargetName);
-
-        // Check if this is a user-defined property by looking at localStorage
-        const udKey = `userDefinedProps:${addObject}`;
-        const userDefinedProps = JSON.parse(
-          localStorage.getItem(udKey) || "[]"
-        );
-        const isUserDefined = userDefinedProps.includes(selectedTargetName);
-
-        // Determine the type based on various checks
-        if (isUserDefined) {
-          propertyType = "userdefined";
-        } else if (isCustomProperty || isNewCustomProperty) {
-          propertyType = "custom";
-        } else if (selectedTargetName && selectedProperty) {
-          // If we have both source and target selected, this is likely a user-defined mapping
-          propertyType = "userdefined";
-        }
-
-        // Get target label from propPool or defaultMapModal
-        const targetProperty =
-          propPool[addObject]?.find((p) => p.name === selectedTargetName) ||
-          defaultMapModal[addObject]?.find(
-            (p) => p.name === selectedTargetName
-          );
-        targetLabel = targetProperty?.label || selectedTargetName;
-      } else {
-        // Mapping to an existing property via dropdown (no checkbox)
-        // Treat as custom mapping and pull proper target label
-        const targetProperty =
-          propPool[addObject]?.find((p) => p.name === targetName) ||
-          defaultMapModal[addObject]?.find((p) => p.name === targetName);
-        targetLabel = targetProperty?.label || targetName;
-        propertyType = "custom";
-      }
-const isDuplicate = rows.some(
-  (r) =>
-    r.object === addObject &&
-    r.source === (selectedSource?.label || sourceName) &&
-    r.target === targetName
-);
-
-if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
-  console.warn("⚠️ Skipping duplicate/self-mapping:", targetName);
-  setIsAddOpen(false);
-  return;
-}
-
-
-      // Create the new row
-      const newRow: PreviewRow = {
-        object: addObject,
-        source: selectedSource?.label || sourceName,
-        target: targetName,
-        type: propertyType,
-      };
-
-      // Add to rows
-      setRows((prevRows) => {
-        const newRows = [...prevRows, newRow];
-        return newRows;
-      });
-      setHasUnsavedChanges(true);
-      
-
-      // Save mapping to database
-      try {
-        const mappingData = {
-          [addObject]: {
-            [targetName]: {
-              targetLabel: targetLabel,
-              targetName: targetName,
-              sourceLabel: selectedSource?.label || sourceName,
-              sourceName: selectedSource?.label || sourceName,
-              newProperty: propertyType === "userdefined", // only true when created via checkbox
-              type: propertyType,
-              objectType: addObject,
-            },
-          },
-        };
-
-        await upsertMappedJson(mappingData);
-        try {
-          window.dispatchEvent(new Event("mappings-updated"));
-        } catch {}
-      } catch (error) {
-        console.error("❌ [DATABASE_SAVE] Error saving mapping:", error);
-      }
-
-      // Reset form
-      setSelectedProperty("");
-      setSelectedTargetName("");
-
-      // Close modal
-      setIsAddOpen(false);
-    } catch (error) {
-      console.error(
-        "❌ [PARENT_ADD_PROPERTY] Error in handleAddProperty:",
-        error
-      );
-      // Even if there's an error, try to close the modal
-      setIsAddOpen(false);
-    }
-  };
-
   // Modal state
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [addObject, setAddObject] = useState<ObjectKey>(() => {
@@ -334,29 +208,125 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
   const [selectedTargetName, setSelectedTargetName] = useState<string>("");
   const [isAtBottom, setIsAtBottom] = useState(false);
 
-  // Debug addObject state
-  useEffect(() => {}, [selectedObjects, addObject]);
-
-  // Update addObject when selectedObjects changes (only if addObject is not in selectedObjects AND modal is not open)
-  useEffect(() => {
-    if (selectedObjects.size > 0 && !isAddOpen) {
-      const sortedObjects = Array.from(selectedObjects).sort((a, b) => {
-        const order = { contacts: 0, companies: 1, deals: 2, tickets: 3 };
-        return order[a] - order[b];
-      });
-      const firstObject = sortedObjects[0] as ObjectKey;
-      // Only update if current addObject is not in selectedObjects
-      if (firstObject && !selectedObjects.has(addObject)) {
-        setAddObject(firstObject);
-        setTargetObject(firstObject);
+  // Handle adding new property mapping
+  const handleAddProperty = async (createdProperty?: PropertyItem) => {
+    try {
+      if (!selectedProperty && !createdProperty) {
+        return;
       }
+
+      let propertyType: "custom" | "default" | "userdefined" = "custom";
+      let targetName = selectedTargetName || selectedProperty;
+      let sourceName = selectedProperty;
+      let targetLabel = selectedTargetName;
+
+      if (createdProperty) {
+        propertyType = "userdefined";
+        targetName = createdProperty.name;
+        targetLabel = createdProperty.label;
+        sourceName = selectedProperty || createdProperty.label;
+        
+        const isCustomProperty =
+          propPool[addObject]?.some((p) => p.name === selectedTargetName) ||
+          false;
+
+        const isNewCustomProperty =
+          selectedTargetName &&
+          !propPool[addObject]?.some((p) => p.name === selectedTargetName);
+
+        // Use the hubspotInstanceIdentifier instead of hubspotInstance
+        const udKey = `userDefinedProps:${addObject}:${hubspotInstanceIdentifier}`;
+        const userDefinedProps = JSON.parse(
+          localStorage.getItem(udKey) || "[]"
+        );
+        const isUserDefined = userDefinedProps.includes(selectedTargetName);
+
+        if (isUserDefined) {
+          propertyType = "userdefined";
+        } else if (isCustomProperty || isNewCustomProperty) {
+          propertyType = "custom";
+        } else if (selectedTargetName && selectedProperty) {
+          propertyType = "userdefined";
+        }
+
+        const targetProperty =
+          propPool[addObject]?.find((p) => p.name === selectedTargetName) ||
+          defaultMapModal[addObject]?.find(
+            (p) => p.name === selectedTargetName
+          );
+        targetLabel = targetProperty?.label || selectedTargetName;
+      } else {
+        const targetProperty =
+          propPool[addObject]?.find((p) => p.name === targetName) ||
+          defaultMapModal[addObject]?.find((p) => p.name === targetName);
+        targetLabel = targetProperty?.label || targetName;
+        propertyType = "custom";
+      }
+
+      const isDuplicate = rows.some(
+        (r) =>
+          r.object === addObject &&
+          r.source === (selectedSource?.label || sourceName) &&
+          r.target === targetName
+      );
+
+      if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
+        console.warn("⚠️ Skipping duplicate/self-mapping:", targetName);
+        setIsAddOpen(false);
+        return;
+      }
+
+      const newRow: PreviewRow = {
+        object: addObject,
+        source: selectedSource?.label || sourceName,
+        target: targetName,
+        type: propertyType,
+      };
+
+      setRows((prevRows) => {
+        const newRows = [...prevRows, newRow];
+        return newRows;
+      });
+      setHasUnsavedChanges(true);
+
+      try {
+        const mappingData = {
+          [addObject]: {
+            [targetName]: {
+              targetLabel: targetLabel,
+              targetName: targetName,
+              sourceLabel: selectedSource?.label || sourceName,
+              sourceName: selectedSource?.label || sourceName,
+              newProperty: propertyType === "userdefined",
+              type: propertyType,
+              objectType: addObject,
+            },
+          },
+        };
+
+        await upsertMappedJson(mappingData);
+        try {
+          window.dispatchEvent(new Event("mappings-updated"));
+        } catch {}
+      } catch (error) {
+        console.error("❌ [DATABASE_SAVE] Error saving mapping:", error);
+      }
+
+      setSelectedProperty("");
+      setSelectedTargetName("");
+      setIsAddOpen(false);
+    } catch (error) {
+      console.error(
+        "❌ [PARENT_ADD_PROPERTY] Error in handleAddProperty:",
+        error
+      );
+      setIsAddOpen(false);
     }
-  }, [selectedObjects, addObject, isAddOpen]);
+  };
 
   // Scroll functionality
   useEffect(() => {
     const handleScroll = () => {
-      // Check if we're at the bottom
       const isBottom =
         window.scrollY + window.innerHeight >= document.body.scrollHeight - 10;
       setIsAtBottom(isBottom);
@@ -386,29 +356,29 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
     setPendingJson({});
   }, []);
 
+  // 🔥 FIX: Use hubspotInstanceIdentifier for data separation
+useEffect(() => {
+  if (hubspotInstanceIdentifier) {
+    console.log("🔄 [STEP4] User changed, clearing caches and reloading...");
+    clearAllCaches();
+    loadMappings();
+  }
+}, [hubspotInstanceIdentifier]);
+
   // Load mappings on mount
   useEffect(() => {
-    // Clear all caches to ensure fresh data
-    selectedObjects.forEach((obj) => {
-      const customCacheKey = `customProperties_${obj}`;
-      const udCacheKey = `userDefinedProps:${obj}`;
-      localStorage.removeItem(customCacheKey);
-      localStorage.removeItem(udCacheKey);
-    });
-
+    clearAllCaches();
     loadMappings();
   }, [selectedObjects]);
 
   // Listen for property deletion events
   useEffect(() => {
     const handlePropertyDeleted = (event: CustomEvent) => {
-      // Clear all caches and reload mappings
       clearAllCaches();
       loadMappings();
     };
 
     const handlePropertyEdited = (event: CustomEvent) => {
-      // Clear all caches and reload mappings
       clearAllCaches();
       loadMappings();
     };
@@ -433,26 +403,23 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
     };
   }, [selectedObjects, loadMappings]);
 
-  // Reload mappings when profile changes (but not when we just added a property)
+  // Reload mappings when profile changes
   useEffect(() => {
-    // Only reload if we have existing rows and profile changed
     if (rows.length > 0 && profile) {
       loadMappings();
     }
   }, [profile]);
 
-  // Load custom properties
-  useEffect(() => {
-    console.log(
-      "🔄 [STEP4] fetchAllCustomProperties called for selectedObjects:",
-      Array.from(selectedObjects)
-    );
-    fetchAllCustomProperties();
-  }, [selectedObjects]);
+  // Load custom properties with user scoping
+useEffect(() => {
+  if (hubspotInstanceIdentifier) {
+    console.log("🔄 [STEP4] Skipping fetchAllCustomProperties (CRM A blocked)");
+  }
+}, [selectedObjects, hubspotInstanceIdentifier]);
 
-  // Integrate custom properties into rows
+  // Integrate custom properties into rows with proper scoping
   useEffect(() => {
-    if (customProperties && Object.keys(customProperties).length > 0) {
+    if (customProperties && Object.keys(customProperties).length > 0 && hubspotInstanceIdentifier) {
       console.log("🔄 [STEP4] Custom properties found:", customProperties);
       const customRows: PreviewRow[] = [];
 
@@ -481,36 +448,32 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
 
       console.log("🔄 [STEP4] Total custom rows created:", customRows.length);
 
-      // Merge custom properties with existing rows
       if (customRows.length > 0) {
         setRows((prevRows) => {
-          // Keep existing custom rows from database and add new HubSpot custom properties
-          // Only add HubSpot custom properties that don't already exist
           const existingCustomSources = new Set(
             prevRows
               .filter((row) => row.type === "custom")
               .map((row) => row.source)
           );
- const newHubSpotCustomRows = customRows.filter(
-  (row) =>
-    !existingCustomSources.has(row.source) &&
-    row.source !== row.target // ❌ skip self-mapping
-);
-
+          
+          const newHubSpotCustomRows = customRows.filter(
+            (row) =>
+              !existingCustomSources.has(row.source) &&
+              row.source !== row.target
+          );
 
           const finalRows = [...prevRows, ...newHubSpotCustomRows];
+          console.log("🔄 [STEP4] Final rows count:", finalRows.length);
           return finalRows;
         });
       }
     }
-  }, [customProperties, selectedObjects]);
+  }, [customProperties, selectedObjects, hubspotInstanceIdentifier]);
 
   // Get source and target lists for AddPropertyModal
   const sourceList = useMemo(() => {
-    // Always use defaultMapModal as fallback, even if propPool is empty
     const list = propPool[addObject] || defaultMapModal[addObject] || [];
 
-    // If still empty, provide some basic fallback properties
     if (list.length === 0) {
       const fallbackProps = [
         { name: "name", label: "Name", type: "string", fieldType: "text" },
@@ -537,13 +500,11 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
   const filteredTargetList = useMemo(() => {
     if (!selectedProperty) return targetList;
 
-    // Find the selected source property to get its type and fieldType
     const selectedSourceProp = sourceList.find(
       (p) => p.name === selectedProperty
     );
     if (!selectedSourceProp) return targetList;
 
-    // Filter target properties by matching type and fieldType
     return targetList.filter(
       (targetProp) =>
         targetProp.type === selectedSourceProp.type &&
@@ -555,31 +516,32 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
     return sourceList.find((p) => p.name === selectedProperty);
   }, [sourceList, selectedProperty]);
 
-  // Load property pools
+  // Load property pools with user scoping
   useEffect(() => {
-    Array.from(selectedObjects)
-      .sort((a, b) => {
-        const order = { contacts: 0, companies: 1, deals: 2, tickets: 3 };
-        return order[a] - order[b];
-      })
-      .forEach((obj) => {
-        if (!loadedLists[obj]) {
-          loadProps(obj, defaultMapModal, defaultMetaByName);
-        }
-      });
-  }, [selectedObjects, loadedLists, defaultMapModal, defaultMetaByName]);
+    if (hubspotInstanceIdentifier) {
+      Array.from(selectedObjects)
+        .sort((a, b) => {
+          const order = { contacts: 0, companies: 1, deals: 2, tickets: 3 };
+          return order[a] - order[b];
+        })
+        .forEach((obj) => {
+          if (!loadedLists[obj]) {
+            loadProps(obj, defaultMapModal, defaultMetaByName);
+          }
+        });
+    }
+  }, [selectedObjects, loadedLists, defaultMapModal, defaultMetaByName, hubspotInstanceIdentifier]);
 
   // Load properties when modal opens or addObject changes
   useEffect(() => {
-    if (isAddOpen && addObject && !loadedLists[addObject]) {
+    if (isAddOpen && addObject && !loadedLists[addObject] && hubspotInstanceIdentifier) {
       loadProps(addObject, defaultMapModal, defaultMetaByName);
     }
-  }, [isAddOpen, addObject, loadedLists, defaultMapModal, defaultMetaByName]);
+  }, [isAddOpen, addObject, loadedLists, defaultMapModal, defaultMetaByName, hubspotInstanceIdentifier]);
 
   // Ensure addObject is valid when modal opens
   useEffect(() => {
     if (isAddOpen && selectedObjects.size > 0) {
-      // If current addObject is not in selectedObjects, set it to the first available
       if (!selectedObjects.has(addObject)) {
         const sortedObjects = Array.from(selectedObjects).sort((a, b) => {
           const order = { contacts: 0, companies: 1, deals: 2, tickets: 3 };
@@ -592,12 +554,16 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
     }
   }, [isAddOpen, selectedObjects, addObject]);
 
+  // 🔥 FIX: Updated clearAllCaches to use hubspotInstanceIdentifier
   const clearAllCaches = useCallback(() => {
+    if (!hubspotInstanceIdentifier) return;
+    
     selectedObjects.forEach((obj) => {
-      const customCacheKey = `customProperties_${obj}`;
-      const udCacheKey = `userDefinedProps:${obj}`;
-      const schemaCacheKey = `schema:${obj}:labels:`;
-      const fetchedCacheKey = `fetchedInSessionObjects`;
+      // Use hubspotInstanceIdentifier for cache keys
+      const customCacheKey = `customProperties_${obj}_${hubspotInstanceIdentifier}`;
+      const udCacheKey = `userDefinedProps:${obj}:${hubspotInstanceIdentifier}`;
+      const schemaCacheKey = `schema:${obj}:labels:${hubspotInstanceIdentifier}`;
+      const fetchedCacheKey = `fetchedInSessionObjects:${hubspotInstanceIdentifier}`;
 
       // Clear localStorage
       localStorage.removeItem(customCacheKey);
@@ -617,7 +583,22 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
       // Clear fetched objects cache
       sessionStorage.removeItem(fetchedCacheKey);
     });
-  }, [selectedObjects]);
+
+    // Clear generic caches without identifier (legacy)
+    selectedObjects.forEach((obj) => {
+      const legacyKeys = [
+        `customProperties_${obj}`,
+        `userDefinedProps:${obj}`,
+        `schema:${obj}:labels:`
+      ];
+      legacyKeys.forEach(key => {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      });
+    });
+
+    console.log("🧹 [CACHE] All caches cleared for:", hubspotInstanceIdentifier);
+  }, [selectedObjects, hubspotInstanceIdentifier]);
 
   return (
     <div className="space-y-6">
@@ -631,9 +612,7 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
               <Button
                 variant="secondary"
                 onClick={() => {
-                  // Clear all caches
                   clearAllCaches();
-                  // Reload mappings
                   loadMappings();
                 }}
                 disabled={isSaving}
@@ -643,7 +622,6 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
               <Button
                 variant="secondary"
                 onClick={() => {
-                  // Force reload from database
                   clearAllCaches();
                   loadMappings();
                 }}
@@ -668,6 +646,16 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
           </Button>
         </div>
       </div>
+
+      {/* Debug info */}
+      {isAdmin && (
+        <div className="bg-gray-100 p-3 rounded text-sm">
+          <div>User ID: {user?.id}</div>
+          <div>Instance Identifier: {hubspotInstanceIdentifier}</div>
+          <div>Rows: {rows.length}</div>
+          <div>Custom Properties: {Object.keys(customProperties || {}).length}</div>
+        </div>
+      )}
 
       <SearchBar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
@@ -746,7 +734,6 @@ if (isDuplicate || (selectedSource?.label || sourceName) === targetName) {
         </div>
       )}
 
-      {/* Single scroll toggle button - always visible */}
       <button
         onClick={toggleScroll}
         className="fixed bottom-4 right-4 bg-green-600 text-white p-3 rounded-full shadow-lg hover:bg-green-700 transition-colors"

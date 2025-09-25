@@ -128,29 +128,27 @@ const TargetPropertyDropdown: React.FC<{
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  // const [openUpwards, setOpenUpwards] = useState(false);
   const isLastSix =
     totalRows && rowIndex !== undefined && rowIndex >= totalRows - 6;
-  // Get default properties
 
-  // Combine defaults + user-defined (user-defined carry current source types)
+  // Combine defaults + user-defined + custom properties
   const properties = useMemo(() => {
     const defaultProps = getPropertiesForObject(objectType);
     const customProps = (propPool?.[objectType] || []) as PropertyItem[];
-
-    // FIX HERE 👇 keep real type/fieldType for custom
-    const userDefined = (userDefinedProperties || []).map((name) => {
-      const match = customProps.find((c) => c.name === name);
+    
+    // User-defined properties from localStorage
+    const userDefinedProps: PropertyItem[] = (userDefinedProperties || []).map((name) => {
+      const existingProp = [...defaultProps, ...customProps].find(p => p.name === name);
       return {
         name,
         label: name,
-        type: match?.type || sourcePropertyType || "string",
-        fieldType: match?.fieldType || sourceFieldType || "text",
+        type: existingProp?.type || sourcePropertyType || "string",
+        fieldType: existingProp?.fieldType || sourceFieldType || "text",
         required: false,
       };
-    }) as PropertyItem[];
+    });
 
-    const merged = [...defaultProps, ...customProps, ...userDefined];
+    const merged = [...defaultProps, ...customProps, ...userDefinedProps];
     return merged.filter(
       (p, i, self) => self.findIndex((x) => x.name === p.name) === i
     );
@@ -165,9 +163,9 @@ const TargetPropertyDropdown: React.FC<{
   // Filter: same type + same fieldType + not required
   const filteredProperties = useMemo(() => {
     return properties.filter((p: any) => {
-      const notRequired = p.required !== true; // include when false/undefined
+      const notRequired = p.required !== true;
 
-      // ✅ STRICT TYPE FILTERING - Only show if both type AND fieldType match
+      // If we have source type info, filter by type compatibility
       if (sourcePropertyType && sourceFieldType) {
         const typeMatches = p.type === sourcePropertyType;
         const fieldMatches = p.fieldType === sourceFieldType;
@@ -211,29 +209,6 @@ const TargetPropertyDropdown: React.FC<{
     sourcePropertyType,
     sourceFieldType,
   ]);
-
-  // Auto flip dropdown if not enough space
-  // const recalcDirection = useCallback(() => {
-  //   const el = triggerRef.current;
-  //   if (!el) return;
-  //   const rect = el.getBoundingClientRect();
-  //   const spaceBelow = window.innerHeight - rect.bottom;
-  //   const spaceAbove = rect.top;
-  //   const needed = 320;
-  //   setOpenUpwards(spaceBelow < needed && spaceAbove > spaceBelow);
-  // }, []);
-
-  // useEffect(() => {
-  //   if (!isOpen) return;
-  //   // recalcDirection();
-  //   // const onScrollOrResize = () => recalcDirection();
-  //   window.addEventListener("scroll", onScrollOrResize, true);
-  //   window.addEventListener("resize", onScrollOrResize);
-  //   return () => {
-  //     window.removeEventListener("scroll", onScrollOrResize, true);
-  //     window.removeEventListener("resize", onScrollOrResize);
-  //   };
-  // }, [isOpen]);
 
   // Close on outside click
   useEffect(() => {
@@ -287,7 +262,6 @@ const TargetPropertyDropdown: React.FC<{
   }, [isOpen, searchedList, selectedIndex]);
 
   const handleSelect = (prop: HubSpotDefaultProperty) => {
-    // store internal name; UI shows label via currentProperty
     onChange(prop.name);
     setIsOpen(false);
     setSearchTerm("");
@@ -307,14 +281,7 @@ const TargetPropertyDropdown: React.FC<{
       <button
         ref={triggerRef}
         type="button"
-        onClick={() =>
-          !disabled &&
-          setIsOpen((o) => {
-            const n = !o;
-            // if (!o) recalcDirection();
-            return n;
-          })
-        }
+        onClick={() => !disabled && setIsOpen((o) => !o)}
         disabled={disabled}
         className={`w-full px-3 py-2 text-left border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
           disabled
@@ -473,8 +440,7 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
   }, [filteredRowsWithoutDuplicates]);
 
   // Render a row (shared)
-  const renderRow = (row: PreviewRow) => {
-    const idx = filteredRowsWithoutDuplicates.indexOf(row);
+  const renderRow = (row: PreviewRow, index: number) => {
     let sourceType = getSourcePropertyType(row.source, row.object);
     let sourceFieldType = getSourceFieldType(row.source, row.object);
 
@@ -493,21 +459,15 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
       (prop) => prop.label === row.source || prop.name === row.source
     );
     const isRequired = sourceProperty?.required === true;
+    
     return (
-      <tr key={`${row.object}|${row.source}|${idx}`}>
+      <tr key={`${row.object}|${row.source}|${index}`}>
         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
           {row.source}
-          {(() => {
-            const sourceProperty = getPropertiesForObject(row.object).find(
-              (prop) => prop.label === row.source || prop.name === row.source
-            );
-            return sourceProperty?.required ? (
-              <span className="text-red-500 ml-1">*</span>
-            ) : null;
-          })()}
+          {isRequired && <span className="text-red-500 ml-1">*</span>}
         </td>
         <td className="px-3 py-4 text-sm text-gray-500">
-          {editingRow === idx ? (
+          {editingRow === index ? (
             <div className="flex items-center gap-2">
               <TargetPropertyDropdown
                 value={editForm.target}
@@ -520,7 +480,7 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
                 disabled={isRequired}
                 propPool={propPool}
                 defaultMapModal={defaultMapModal}
-                rowIndex={idx}
+                rowIndex={index}
                 totalRows={filteredRowsWithoutDuplicates.length}
               />
             </div>
@@ -529,7 +489,7 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
               value={row.target}
               onChange={(value) => {
                 const updatedRow = { ...row, target: value };
-                onRowUpdate?.(idx, updatedRow);
+                onRowUpdate?.(index, updatedRow);
               }}
               objectType={row.object}
               sourcePropertyType={sourceType}
@@ -539,7 +499,7 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
               disabled={isRequired}
               propPool={propPool}
               defaultMapModal={defaultMapModal}
-              rowIndex={idx}
+              rowIndex={index}
               totalRows={filteredRowsWithoutDuplicates.length}
             />
           )}
@@ -567,24 +527,21 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
           <div className="flex space-x-2">
             {row.type === "userdefined" && (
               <button
-                onClick={() => onDeleteUserDefined(idx)}
+                onClick={() => onDeleteUserDefined(index)}
                 className="text-red-600 hover:text-red-900"
               >
                 Delete
               </button>
             )}
-            {/* Reset button - Simple version */}
+            
             {!isRequired &&
               row.type !== "userdefined" &&
               row.source !== row.target && (
                 <button
                   onClick={() => {
-                    // Simple approach - just call onRowUpdate
                     const updatedRow = { ...row, target: row.source };
-                    onRowUpdate?.(idx, updatedRow);
-
-                    // Also call reverse function if available
-                    onReverseCustomProperty?.(idx);
+                    onRowUpdate?.(index, updatedRow);
+                    onReverseCustomProperty?.(index);
                   }}
                   className="p-1 text-orange-600 hover:text-orange-800 hover:bg-orange-50 rounded"
                   title="Reset target to source"
@@ -601,7 +558,7 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
 
             {!isRequired && (
               <button
-                onClick={() => onDeleteUserDefined(idx)}
+                onClick={() => onDeleteUserDefined(index)}
                 className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
                 title="Remove property"
               >
@@ -620,9 +577,17 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
     );
   };
 
-  const Section = ({ data }: { data: PreviewRow[] }) => {
+  const Section = ({ data, type }: { data: PreviewRow[]; type: string }) => {
     if (data.length === 0) return null;
-    return <>{data.map(renderRow)}</>;
+    return (
+      <>
+        {data.map((row, index) => (
+          <React.Fragment key={`${type}-${index}`}>
+            {renderRow(row, filteredRowsWithoutDuplicates.indexOf(row))}
+          </React.Fragment>
+        ))}
+      </>
+    );
   };
 
   return (
@@ -665,9 +630,9 @@ export const PropertyTable: React.FC<PropertyTableProps> = ({
             </thead>
 
             <tbody className="bg-white divide-y divide-gray-200">
-              <Section data={groups.default} />
-              <Section data={groups.userdefined} />
-              <Section data={groups.custom} />
+              <Section data={groups.default} type="default" />
+              <Section data={groups.userdefined} type="userdefined" />
+              <Section data={groups.custom} type="custom" />
             </tbody>
           </table>
         </div>
@@ -772,27 +737,32 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     defaultCountsMap[objectType] || 0;
   const getTotalDefaultCount = () =>
     Object.values(defaultCountsMap).reduce((a, b) => a + b, 0);
+  
+  // Count custom properties (HubSpot created)
   const getTotalCustomCount = () =>
     filteredRowsWithoutDuplicates.filter((r) => r.type === "custom").length;
+  
+  // Count user-defined properties (popup created)
   const getTotalUserDefinedCount = () =>
-    filteredRowsWithoutDuplicates.filter((r) => r.type === "userdefined")
-      .length;
+    filteredRowsWithoutDuplicates.filter((r) => r.type === "userdefined").length;
+  
   const getTotalCount = () =>
     getTotalDefaultCount() + getTotalCustomCount() + getTotalUserDefinedCount();
+  
   const getCustomCount = (objectType: ObjectKey) =>
     filteredRowsWithoutDuplicates.filter(
       (r) => r.object === objectType && r.type === "custom"
     ).length;
+  
   const getUserDefinedCount = (objectType: ObjectKey) =>
     filteredRowsWithoutDuplicates.filter(
       (r) => r.object === objectType && r.type === "userdefined"
-      
     ).length;
+  
   const getObjectTotal = (objectType: ObjectKey) =>
     getDefaultCount(objectType) +
     getCustomCount(objectType) +
     getUserDefinedCount(objectType);
-
 
   return (
     <div className="mt-4 p-4 bg-gray-50 rounded-lg">
@@ -809,7 +779,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           <span className="font-medium">Custom:</span> {getTotalCustomCount()}
         </div>
         <div>
-          <span className="font-medium">userdefined:</span>{" "}
+          <span className="font-medium">User Defined:</span>{" "}
           {getTotalUserDefinedCount()}
         </div>
       </div>
@@ -836,7 +806,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               const totalProps = getObjectTotal(objectType);
               return (
                 <div key={objectType} className="bg-white p-3 rounded border">
-                  <div className="font-medium text-gray-80 capitalize mb-2">
+                  <div className="font-medium text-gray-800 capitalize mb-2">
                     {objectType}
                   </div>
                   <div className="space-y-1 text-xs text-gray-600">
@@ -857,7 +827,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span>userdefined:</span>
+                      <span>User Defined:</span>
                       <span className="text-purple-600 font-medium">
                         {userDefProps}
                       </span>

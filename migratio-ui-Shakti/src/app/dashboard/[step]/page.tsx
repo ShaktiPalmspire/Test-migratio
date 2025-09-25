@@ -845,6 +845,7 @@ function DashboardContent() {
               onBack={handleStepChange}
               hubspotStatusA={hubspotStatusA}
               onMigrateClick={handleMigrateToCrmB}
+              selectedObjects={[...selectedObjects]}
             />
           )}
         </main>

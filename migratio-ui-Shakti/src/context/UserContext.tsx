@@ -17,7 +17,6 @@ export type Profile = {
   hubspot_access_token_expires_at_b?: string | null
   hubspot_refresh_token_a?: string | null
   hubspot_refresh_token_b?: string | null
-  // hubspot_portal_id_b?: number | null  // Commented out - doesn't exist in DB
   status?: string
   deactivated_at?: string
   reactivation_requested_at?: string
@@ -333,6 +332,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         }
 
         const currentSession = data.session
+        
         setSession(currentSession)
         setUser(currentSession?.user ?? null)
 

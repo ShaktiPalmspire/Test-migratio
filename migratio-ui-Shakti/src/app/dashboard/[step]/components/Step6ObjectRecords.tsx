@@ -15,16 +15,16 @@ interface Step6Props {
     objects?: ObjectKey[]
   ) => Promise<{ created: number; fetched: number } | null>;
   hubspotStatusA: HubspotStatus;
+  selectedObjects: ObjectKey[];   // 👈 NEW prop (from Step3)
 }
 
 export default function Step6ObjectRecords({
   onBack,
   onMigrateClick,
   hubspotStatusA,
+  selectedObjects,   // 👈 use here
 }: Step6Props) {
   const { profile } = useUser();
-  const OBJECTS: ObjectKey[] = ["companies", "deals", "tickets", "contacts"];
-
   const [migrating, setMigrating] = useState(false);
 
   return (
@@ -44,7 +44,7 @@ export default function Step6ObjectRecords({
 
       {/* Object cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
-        {OBJECTS.map((key) => (
+        {selectedObjects.map((key) => (
           <ObjectCardWithCount
             key={key}
             objectKey={key}
@@ -69,7 +69,7 @@ export default function Step6ObjectRecords({
             if (!onMigrateClick) return;
             try {
               setMigrating(true);
-              await onMigrateClick();
+              await onMigrateClick(selectedObjects);  // 👈 pass only selected
             } finally {
               setMigrating(false);
             }
@@ -86,6 +86,7 @@ export default function Step6ObjectRecords({
     </div>
   );
 }
+
 
 function ObjectCardWithCount({
   objectKey,

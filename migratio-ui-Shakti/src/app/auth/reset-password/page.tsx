@@ -6,12 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Button from "../../../components/Buttons/button";
 import Heading from "../../../components/Headings/heading";
 import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardHeader,
-  CardContent,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { IconEye, IconEyeOff } from "@tabler/icons-react";
 
 export default function ResetPasswordPage() {
@@ -33,7 +28,10 @@ export default function ResetPasswordPage() {
       setError(error.message);
     } else {
       setSuccess("Password updated successfully! You can now log in.");
-      setTimeout(() => router.push("/auth/login"), 2000);
+      if (!error) {
+        await supabase.auth.signOut();
+        router.replace("/auth/login");
+      }
     }
   };
 
@@ -79,9 +77,7 @@ export default function ResetPasswordPage() {
             </Button>
 
             {error && <div className="text-red-500 text-sm">{error}</div>}
-            {success && (
-              <div className="text-green-600 text-sm">{success}</div>
-            )}
+            {success && <div className="text-green-600 text-sm">{success}</div>}
           </form>
         </CardContent>
       </Card>
